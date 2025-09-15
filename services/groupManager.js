@@ -120,7 +120,7 @@ class GroupManager {
       // Salvar informações do grupo
       await this.saveGroup({
         telegram_id: groupId,
-        name: groupInfo.title,
+        title: groupInfo.title,
         type: groupInfo.type,
         member_count: await this.bot.getChatMemberCount(groupId)
       });
@@ -175,7 +175,7 @@ class GroupManager {
               username: admin.user.username,
               first_name: admin.user.first_name,
               last_name: admin.user.last_name,
-              is_admin: true,
+              status: 'administrator',
               is_active: true
             });
             scrapedCount++;
@@ -664,9 +664,11 @@ class GroupManager {
       const query = `
         INSERT OR REPLACE INTO group_members (
           user_id, group_id, username, first_name, last_name, 
-          is_admin, is_active, last_seen, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          status, is_active, last_seen
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `;
+      
+      const status = memberData.is_admin ? 'administrator' : (memberData.status || 'member');
       
       await this.db.run(query, [
         memberData.user_id,
@@ -674,7 +676,7 @@ class GroupManager {
         memberData.username,
         memberData.first_name,
         memberData.last_name,
-        memberData.is_admin ? 1 : 0,
+        status,
         memberData.is_active ? 1 : 0,
         memberData.last_seen || new Date().toISOString()
       ]);
@@ -691,13 +693,13 @@ class GroupManager {
     try {
       const query = `
         INSERT OR REPLACE INTO groups (
-          telegram_id, name, type, member_count, created_at, updated_at
+          telegram_id, title, type, member_count, created_at, updated_at
         ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `;
       
       await this.db.run(query, [
         groupData.telegram_id,
-        groupData.name,
+        groupData.title,
         groupData.type,
         groupData.member_count
       ]);

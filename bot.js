@@ -191,12 +191,11 @@ class TelegramSubscriptionBot {
       const subscriptionPrice = parseInt(process.env.SUBSCRIPTION_PRICE) || 4990;
       const priceFormatted = infinitePayService.formatCurrency(subscriptionPrice);
       
-      const welcomeMessage = `
-🎯 *${productName}*
+      const welcomeMessage = `🎯 *${productName.replace(/[_*\[\]()~`>#+=|{}.!-]/g, '\\$&')}*
 
-${productDescription}
+${productDescription.replace(/[_*\[\]()~`>#+=|{}.!-]/g, '\\$&')}
 
-💰 *${priceFormatted} / mês*
+💰 *${priceFormatted.replace(/[_*\[\]()~`>#+=|{}.!-]/g, '\\$&')} / mês*
 
 ${this.getSubscriptionStatusMessage(dbUser)}
 
@@ -1161,7 +1160,7 @@ Segunda a Sexta: 9h às 18h`;
         message += 'Nenhum grupo cadastrado.';
       } else {
         groups.forEach(group => {
-          message += `• ${group.name} (${group.telegram_id})\n`;
+          message += `• ${group.title} (${group.telegram_id})\n`;
           message += `  Membros: ${group.member_count || 0}\n\n`;
         });
       }
@@ -2158,7 +2157,7 @@ Segunda a Sexta: 9h às 18h`;
       // Salvar informações do grupo
       await this.groupManager.saveGroup({
         telegram_id: groupId,
-        name: groupName,
+        title: groupName,
         type: msg.chat.type,
         member_count: await this.getChatMemberCount(groupId)
       });
@@ -2217,7 +2216,7 @@ Segunda a Sexta: 9h às 18h`;
         // Salvar/atualizar informações do grupo
         await this.groupManager.saveGroup({
           telegram_id: groupId,
-          name: groupName,
+          title: groupName,
           type: msg.chat.type,
           member_count: await this.getChatMemberCount(groupId)
         });

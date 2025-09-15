@@ -152,7 +152,7 @@ class BackupManager {
       }
 
       if (excludeAdmins) {
-        sql += ' AND gm.is_admin = 0';
+        sql += " AND gm.status != 'administrator'";
       }
 
       // Exclui membros que já estão no grupo de destino
