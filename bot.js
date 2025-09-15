@@ -235,6 +235,23 @@ ${this.getSubscriptionStatusMessage(dbUser)}
           await this.handleCancelarDMs(callbackQuery);
           break;
           
+        // Novos planos de assinatura
+        case 'plan_week':
+          await this.handlePlanWeek(chatId, userId);
+          break;
+          
+        case 'plan_month':
+          await this.handlePlanMonth(chatId, userId);
+          break;
+          
+        case 'plan_year':
+          await this.handlePlanYear(chatId, userId);
+          break;
+          
+        case 'back_main':
+          await this.handleStart({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
         default:
           await this.bot.sendMessage(chatId, '❌ Ação não reconhecida.');
       }
@@ -254,30 +271,33 @@ ${this.getSubscriptionStatusMessage(dbUser)}
         return;
       }
       
-      // Gera dados da cobrança
-      const chargeData = infinitePayService.generateSubscriptionCharge(user, process.env.SUBSCRIPTION_PRICE);
-      
-      await this.bot.sendMessage(chatId, '⏳ Gerando cobrança Pix...');
-      
-      // Cria cobrança na InfinitePay
-      const charge = await infinitePayService.createPixCharge(chargeData);
-      
-      // Salva pagamento no banco
-      const dueDate = moment().add(parseInt(process.env.DAYS_TO_EXPIRE) || 7, 'days').format('YYYY-MM-DD');
-      
-      await database.createPayment({
-        user_id: user.id,
-        telegram_id: userId,
-        infinitepay_id: charge.id,
-        amount: charge.amount,
-        currency: charge.currency,
-        pix_code: charge.pix_code,
-        qr_code_url: charge.qr_code_url,
-        due_date: dueDate
-      });
-      
-      // Envia cobrança para o usuário
-      await this.sendPixCharge(chatId, charge, dueDate);
+      // Apresenta opções de planos
+      await this.bot.sendMessage(chatId, 
+        '💎 **ESCOLHA SEU PLANO PREMIUM**\n\n' +
+        '🔥 Acesso total ao conteúdo exclusivo +18\n' +
+        '📱 Conteúdo premium ilimitado\n' +
+        '🎯 Suporte prioritário\n\n' +
+        '💰 **PLANOS DISPONÍVEIS:**',
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '⚡ 1 Semana - R$ 20,00', callback_data: 'plan_week' }
+              ],
+              [
+                { text: '🔥 1 Mês - R$ 35,00', callback_data: 'plan_month' }
+              ],
+              [
+                { text: '💎 1 Ano - R$ 145,00 (MELHOR OFERTA)', callback_data: 'plan_year' }
+              ],
+              [
+                { text: '🔙 Voltar', callback_data: 'back_main' }
+              ]
+            ]
+          }
+        }
+      );
       
     } catch (error) {
       console.error('❌ Erro ao processar assinatura:', error.message);
@@ -543,6 +563,124 @@ Segunda a Sexta: 9h às 18h`;
       await this.bot.sendMessage(callbackQuery.message.chat.id, 
         '❌ Erro ao processar cancelamento. Tente novamente.'
       );
+    }
+  }
+
+  // Métodos para planos específicos
+  async handlePlanWeek(chatId, userId) {
+    try {
+      const user = await database.getUserByTelegramId(userId);
+      
+      if (!user) {
+        await this.bot.sendMessage(chatId, '❌ Usuário não encontrado. Use /start primeiro.');
+        return;
+      }
+
+      await this.bot.sendMessage(chatId, 
+        '⚡ **PLANO SEMANAL - R$ 20,00**\n\n' +
+        '🔥 7 dias de acesso total\n' +
+        '📱 Conteúdo premium ilimitado\n' +
+        '🎯 Suporte prioritário\n\n' +
+        '💳 **Clique no link abaixo para pagar:**',
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                 { text: '💳 Pagar R$ 20,00 - 1 Semana', url: process.env.PLAN_WEEK_LINK }
+               ],
+              [
+                { text: '🔙 Voltar aos Planos', callback_data: 'subscribe_now' }
+              ]
+            ]
+          }
+        }
+      );
+      
+      console.log(`⚡ Usuário ${userId} selecionou plano semanal`);
+      
+    } catch (error) {
+      console.error('❌ Erro no plano semanal:', error.message);
+      await this.bot.sendMessage(chatId, '❌ Erro interno. Tente novamente.');
+    }
+  }
+
+  async handlePlanMonth(chatId, userId) {
+    try {
+      const user = await database.getUserByTelegramId(userId);
+      
+      if (!user) {
+        await this.bot.sendMessage(chatId, '❌ Usuário não encontrado. Use /start primeiro.');
+        return;
+      }
+
+      await this.bot.sendMessage(chatId, 
+        '🔥 **PLANO MENSAL - R$ 35,00**\n\n' +
+        '💎 30 dias de acesso total\n' +
+        '📱 Conteúdo premium ilimitado\n' +
+        '🎯 Suporte prioritário\n' +
+        '💰 Economia de R$ 25,00 vs semanal\n\n' +
+        '💳 **Clique no link abaixo para pagar:**',
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                 { text: '💳 Pagar R$ 35,00 - 1 Mês', url: process.env.PLAN_MONTH_LINK }
+               ],
+              [
+                { text: '🔙 Voltar aos Planos', callback_data: 'subscribe_now' }
+              ]
+            ]
+          }
+        }
+      );
+      
+      console.log(`🔥 Usuário ${userId} selecionou plano mensal`);
+      
+    } catch (error) {
+      console.error('❌ Erro no plano mensal:', error.message);
+      await this.bot.sendMessage(chatId, '❌ Erro interno. Tente novamente.');
+    }
+  }
+
+  async handlePlanYear(chatId, userId) {
+    try {
+      const user = await database.getUserByTelegramId(userId);
+      
+      if (!user) {
+        await this.bot.sendMessage(chatId, '❌ Usuário não encontrado. Use /start primeiro.');
+        return;
+      }
+
+      await this.bot.sendMessage(chatId, 
+        '💎 **PLANO ANUAL - R$ 145,00**\n\n' +
+        '🏆 365 dias de acesso total\n' +
+        '📱 Conteúdo premium ilimitado\n' +
+        '🎯 Suporte prioritário VIP\n' +
+        '💰 **ECONOMIA DE R$ 275,00** vs mensal\n' +
+        '🎁 **MELHOR OFERTA DISPONÍVEL**\n\n' +
+        '💳 **Clique no link abaixo para pagar:**',
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                 { text: '💳 Pagar R$ 145,00 - 1 Ano', url: process.env.PLAN_YEAR_LINK }
+               ],
+              [
+                { text: '🔙 Voltar aos Planos', callback_data: 'subscribe_now' }
+              ]
+            ]
+          }
+        }
+      );
+      
+      console.log(`💎 Usuário ${userId} selecionou plano anual`);
+      
+    } catch (error) {
+      console.error('❌ Erro no plano anual:', error.message);
+      await this.bot.sendMessage(chatId, '❌ Erro interno. Tente novamente.');
     }
   }
 

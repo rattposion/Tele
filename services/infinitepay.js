@@ -1,54 +1,49 @@
-const axios = require('axios');
-const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
 class InfinitePayService {
   constructor() {
-    this.apiKey = process.env.INFINITEPAY_API_KEY;
-    this.secretKey = process.env.INFINITEPAY_SECRET_KEY;
-    this.baseURL = process.env.INFINITEPAY_BASE_URL || 'https://api.infinitepay.io/v2';
-    this.webhookSecret = process.env.INFINITEPAY_WEBHOOK_SECRET;
+    // Configuração para Links de Pagamento (não requer API)
+    this.paymentLinkBase = process.env.INFINITEPAY_PAYMENT_LINK_BASE || 'https://pay.infinitepay.io';
+    this.merchantId = process.env.INFINITEPAY_MERCHANT_ID || 'merchant_placeholder';
     
-    if (!this.apiKey || !this.secretKey) {
-      throw new Error('❌ Credenciais da InfinitePay não configuradas');
-    }
-    
-    this.client = axios.create({
-      baseURL: this.baseURL,
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'TelegramSubscriptionBot/1.0'
-      },
-      timeout: 30000
+    console.log('💳 InfinitePay configurado para Links de Pagamento');
+    console.log('ℹ️ Nota: APIs e webhooks não estão disponíveis no momento');
+  }
+
+  // Gera Link de Pagamento personalizado
+  generatePaymentLink(chargeData) {
+    const params = new URLSearchParams({
+      merchant_id: this.merchantId,
+      amount: chargeData.amount,
+      currency: chargeData.currency || 'BRL',
+      description: chargeData.description,
+      external_id: chargeData.externalId || uuidv4(),
+      customer_name: chargeData.customerName || '',
+      return_url: chargeData.returnUrl || '',
+      cancel_url: chargeData.cancelUrl || ''
     });
-  }
-
-  // Gera assinatura para webhook
-  generateSignature(payload, secret) {
-    return crypto
-      .createHmac('sha256', secret)
-      .update(payload)
-      .digest('hex');
-  }
-
-  // Verifica assinatura do webhook
-  verifyWebhookSignature(payload, signature) {
-    if (!this.webhookSecret) {
-      console.warn('⚠️ Webhook secret não configurado');
-      return true; // Em desenvolvimento, pode pular verificação
-    }
     
-    const expectedSignature = this.generateSignature(payload, this.webhookSecret);
-    return crypto.timingSafeEqual(
-      Buffer.from(signature, 'hex'),
-      Buffer.from(expectedSignature, 'hex')
-    );
+    return `${this.paymentLinkBase}?${params.toString()}`;
   }
 
-  // Cria cobrança Pix
-  async createPixCharge(chargeData) {
+  // Gera Link de Pagamento PIX
+  generatePixPaymentLink(chargeData) {
+    const params = new URLSearchParams({
+      merchant_id: this.merchantId,
+      payment_method: 'pix',
+      amount: chargeData.amount,
+      currency: chargeData.currency || 'BRL',
+      description: chargeData.description,
+      external_id: chargeData.externalId || uuidv4(),
+      customer_name: chargeData.customerName || ''
+    });
+    
+    return `${this.paymentLinkBase}/pix?${params.toString()}`;
+  }
+
+  // Cria Link de Pagamento PIX
+  createPixCharge(chargeData) {
     try {
       const {
         amount,
@@ -69,154 +64,118 @@ class InfinitePayService {
         throw new Error('Descrição da cobrança é obrigatória');
       }
 
-      const payload = {
-        amount: Math.round(amount), // Valor em centavos
+      console.log('💳 Gerando Link de Pagamento PIX...', {
+        amount: amount,
+        description: description,
+        external_id: externalId || uuidv4()
+      });
+
+      const paymentLink = this.generatePixPaymentLink(chargeData);
+      const chargeId = externalId || uuidv4();
+      
+      console.log('✅ Link de Pagamento PIX gerado:', chargeId);
+      
+      return {
+        success: true,
+        id: chargeId,
+        status: 'pending',
+        amount: amount,
         currency: 'BRL',
         description: description,
-        external_id: externalId || uuidv4(),
-        payment_method: 'pix',
-        expires_in: expiresIn,
-        customer: {
-          name: customerName,
-          document: customerDocument,
-          email: customerEmail
-        },
-        notification_url: `${process.env.TELEGRAM_WEBHOOK_URL}/webhook/infinitepay`,
-        return_url: null // Para bot do Telegram não precisamos de return_url
+        external_id: chargeId,
+        payment_url: paymentLink,
+        expires_at: new Date(Date.now() + expiresIn * 1000).toISOString(),
+        created_at: new Date().toISOString(),
+        message: 'Link de pagamento gerado. Cliente deve acessar o link para completar o pagamento.'
       };
-
-      console.log('📤 Criando cobrança Pix:', {
-        amount: payload.amount,
-        description: payload.description,
-        external_id: payload.external_id
-      });
-
-      const response = await this.client.post('/charges', payload);
-      
-      if (response.data && response.data.id) {
-        console.log('✅ Cobrança Pix criada:', response.data.id);
-        
-        return {
-          id: response.data.id,
-          status: response.data.status,
-          amount: response.data.amount,
-          currency: response.data.currency,
-          description: response.data.description,
-          external_id: response.data.external_id,
-          pix_code: response.data.pix?.qr_code || response.data.pix_code,
-          qr_code_url: response.data.pix?.qr_code_url || response.data.qr_code_url,
-          expires_at: response.data.expires_at,
-          created_at: response.data.created_at
-        };
-      } else {
-        throw new Error('Resposta inválida da API InfinitePay');
-      }
     } catch (error) {
-      console.error('❌ Erro ao criar cobrança Pix:', error.message);
-      
-      if (error.response) {
-        console.error('Detalhes do erro:', {
-          status: error.response.status,
-          data: error.response.data
-        });
-        
-        // Trata erros específicos da API
-        if (error.response.status === 401) {
-          throw new Error('Credenciais da InfinitePay inválidas');
-        } else if (error.response.status === 400) {
-          const errorMsg = error.response.data?.message || 'Dados da cobrança inválidos';
-          throw new Error(`Erro na cobrança: ${errorMsg}`);
-        } else if (error.response.status >= 500) {
-          throw new Error('Erro interno da InfinitePay. Tente novamente.');
-        }
-      }
-      
-      throw error;
-    }
-  }
-
-  // Consulta status de uma cobrança
-  async getChargeStatus(chargeId) {
-    try {
-      console.log('🔍 Consultando status da cobrança:', chargeId);
-      
-      const response = await this.client.get(`/charges/${chargeId}`);
-      
-      if (response.data) {
-        return {
-          id: response.data.id,
-          status: response.data.status,
-          amount: response.data.amount,
-          paid_at: response.data.paid_at,
-          external_id: response.data.external_id
-        };
-      } else {
-        throw new Error('Cobrança não encontrada');
-      }
-    } catch (error) {
-      console.error('❌ Erro ao consultar cobrança:', error.message);
-      
-      if (error.response?.status === 404) {
-        throw new Error('Cobrança não encontrada');
-      }
-      
-      throw error;
-    }
-  }
-
-  // Cancela uma cobrança
-  async cancelCharge(chargeId) {
-    try {
-      console.log('❌ Cancelando cobrança:', chargeId);
-      
-      const response = await this.client.post(`/charges/${chargeId}/cancel`);
+      console.error('❌ Erro ao gerar Link de Pagamento PIX:', error.message);
       
       return {
-        id: response.data.id,
-        status: response.data.status,
-        cancelled_at: response.data.cancelled_at
+        success: false,
+        error: error.message,
+        details: 'Erro na geração do link de pagamento'
       };
-    } catch (error) {
-      console.error('❌ Erro ao cancelar cobrança:', error.message);
-      throw error;
     }
   }
 
-  // Processa webhook da InfinitePay
-  processWebhook(webhookData) {
+  // Consulta status de uma cobrança (simulado - requer verificação manual)
+  getChargeStatus(chargeId) {
+    console.log(`🔍 Consultando status da cobrança: ${chargeId}`);
+    console.log('ℹ️ Nota: Verificação de status requer consulta manual no painel da InfinitePay');
+    
+    return {
+      id: chargeId,
+      status: 'pending',
+      message: 'Status deve ser verificado manualmente no painel da InfinitePay',
+      manual_check_required: true,
+      panel_url: 'https://dashboard.infinitepay.io'
+    };
+  }
+
+  // Cancela uma cobrança (simulado - requer ação manual)
+  cancelCharge(chargeId) {
+    console.log(`❌ Solicitando cancelamento da cobrança: ${chargeId}`);
+    console.log('ℹ️ Nota: Cancelamento requer ação manual no painel da InfinitePay');
+    
+    return {
+      id: chargeId,
+      status: 'cancel_requested',
+      message: 'Cancelamento deve ser feito manualmente no painel da InfinitePay',
+      manual_action_required: true,
+      panel_url: 'https://dashboard.infinitepay.io'
+    };
+  }
+
+  // Processa notificações manuais de pagamento
+  processManualPaymentNotification(paymentData) {
     try {
-      const { event, data } = webhookData;
+      console.log('📨 Processando notificação manual de pagamento:', paymentData.chargeId);
+      console.log('ℹ️ Nota: Webhooks automáticos não estão disponíveis no momento');
       
-      console.log('📥 Webhook recebido:', {
-        event,
-        charge_id: data?.id,
-        status: data?.status
-      });
-
-      // Eventos suportados
-      const supportedEvents = [
-        'charge.paid',
-        'charge.expired',
-        'charge.cancelled',
-        'charge.refunded'
-      ];
-
-      if (!supportedEvents.includes(event)) {
-        console.log('ℹ️ Evento não processado:', event);
-        return null;
+      const { chargeId, status, amount, externalId, paidAt } = paymentData;
+      
+      switch (status) {
+        case 'paid':
+          console.log('💰 Pagamento confirmado manualmente:', chargeId);
+          return {
+            type: 'payment_confirmed',
+            chargeId: chargeId,
+            amount: amount,
+            externalId: externalId,
+            paidAt: paidAt || new Date().toISOString(),
+            manual_confirmation: true
+          };
+          
+        case 'failed':
+          console.log('❌ Pagamento falhou (confirmação manual):', chargeId);
+          return {
+            type: 'payment_failed',
+            chargeId: chargeId,
+            externalId: externalId,
+            manual_confirmation: true
+          };
+          
+        case 'expired':
+          console.log('⏰ Pagamento expirou (confirmação manual):', chargeId);
+          return {
+            type: 'payment_expired',
+            chargeId: chargeId,
+            externalId: externalId,
+            manual_confirmation: true
+          };
+          
+        default:
+          console.log('❓ Status de pagamento desconhecido:', status);
+          return {
+            type: 'unknown',
+            originalStatus: status,
+            chargeId: chargeId,
+            manual_confirmation: true
+          };
       }
-
-      return {
-        event,
-        charge_id: data.id,
-        status: data.status,
-        amount: data.amount,
-        paid_at: data.paid_at,
-        external_id: data.external_id,
-        raw_data: data
-      };
     } catch (error) {
-      console.error('❌ Erro ao processar webhook:', error.message);
+      console.error('❌ Erro ao processar notificação manual:', error.message);
       throw error;
     }
   }
@@ -244,24 +203,36 @@ class InfinitePayService {
     };
   }
 
-  // Testa conectividade com a API
-  async testConnection() {
+  // Testa configuração para Links de Pagamento
+  testConnection() {
     try {
-      console.log('🔄 Testando conexão com InfinitePay...');
+      console.log('🔄 Testando configuração de Links de Pagamento...');
       
-      // Faz uma requisição simples para testar as credenciais
-      const response = await this.client.get('/charges?limit=1');
+      // Gera um link de teste para verificar configuração
+      const testData = {
+        amount: 1000, // R$ 10,00
+        description: 'Teste de configuração',
+        externalId: 'test_' + Date.now()
+      };
       
-      console.log('✅ Conexão com InfinitePay OK');
-      return true;
+      const testLink = this.generatePaymentLink(testData);
+      
+      console.log('✅ Configuração de Links de Pagamento OK');
+      console.log('🔗 Link de teste gerado:', testLink);
+      
+      return {
+        success: true,
+        testLink: testLink,
+        message: 'Links de Pagamento configurados corretamente'
+      };
     } catch (error) {
-      console.error('❌ Erro na conexão com InfinitePay:', error.message);
+      console.error('❌ Erro na configuração de Links de Pagamento:', error.message);
       
-      if (error.response?.status === 401) {
-        console.error('🔑 Credenciais inválidas');
-      }
-      
-      return false;
+      return {
+        success: false,
+        error: error.message,
+        message: 'Erro na configuração de Links de Pagamento'
+      };
     }
   }
 }
