@@ -1720,7 +1720,7 @@ Segunda a Sexta: 9h às 18h`;
   
   initializeAutoPost() {
     try {
-      this.autoPostManager.startScheduler();
+      this.autoPostManager.start();
       console.log('✅ Sistema de auto-post inicializado');
     } catch (error) {
       console.error('❌ Erro ao inicializar auto-post:', error.message);
