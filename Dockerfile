@@ -2,7 +2,7 @@
 # Use registries alternativos em caso de problemas com Docker Hub
 
 # Opção 1: Docker Hub (padrão)
-FROM node:18-alpine AS base
+FROM node:18.20-alpine
 
 # Opção 2: Registry alternativo (descomente se necessário)
 # FROM registry.gitlab.com/node:18-alpine AS base
