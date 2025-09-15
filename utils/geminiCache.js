@@ -18,8 +18,29 @@ class GeminiCache {
   }
 
   ensureCacheDirectory() {
-    if (!fs.existsSync(this.cacheDir)) {
-      fs.mkdirSync(this.cacheDir, { recursive: true });
+    try {
+      if (!fs.existsSync(this.cacheDir)) {
+        fs.mkdirSync(this.cacheDir, { recursive: true });
+        logger.info(`Cache directory created: ${this.cacheDir}`);
+      }
+    } catch (error) {
+      logger.error(`Failed to create cache directory ${this.cacheDir}:`, error.message);
+      
+      // Fallback para diretório temporário
+      const tempDir = require('os').tmpdir();
+      this.cacheDir = path.join(tempDir, 'gemini-cache');
+      
+      try {
+        if (!fs.existsSync(this.cacheDir)) {
+          fs.mkdirSync(this.cacheDir, { recursive: true });
+          logger.warn(`Using fallback cache directory: ${this.cacheDir}`);
+        }
+      } catch (fallbackError) {
+        logger.error('Failed to create fallback cache directory:', fallbackError.message);
+        // Desabilitar cache em disco se não conseguir criar diretório
+        this.cacheDir = null;
+        logger.warn('Disk cache disabled - using memory cache only');
+      }
     }
   }
 
@@ -200,6 +221,9 @@ class GeminiCache {
    * Busca item no cache em disco
    */
   async getFromDisk(cacheKey) {
+    // Se cache em disco não está disponível, retorna null
+    if (!this.cacheDir) return null;
+    
     const filePath = path.join(this.cacheDir, `${cacheKey}.json`);
     
     try {
@@ -220,6 +244,9 @@ class GeminiCache {
    * Salva item no cache em disco
    */
   async saveToDisk(cacheKey, item) {
+    // Se cache em disco não está disponível, não faz nada
+    if (!this.cacheDir) return;
+    
     const filePath = path.join(this.cacheDir, `${cacheKey}.json`);
     
     try {
@@ -236,7 +263,8 @@ class GeminiCache {
    */
   loadMemoryCache() {
     try {
-      if (!fs.existsSync(this.cacheDir)) return;
+      // Se cache em disco não está disponível, não carrega nada
+      if (!this.cacheDir || !fs.existsSync(this.cacheDir)) return;
       
       const files = fs.readdirSync(this.cacheDir)
         .filter(file => file.endsWith('.json'))
@@ -290,7 +318,7 @@ class GeminiCache {
       }
       
       // Limpa cache em disco
-      if (fs.existsSync(this.cacheDir)) {
+      if (this.cacheDir && fs.existsSync(this.cacheDir)) {
         const files = fs.readdirSync(this.cacheDir)
           .filter(file => file.endsWith('.json'));
         
@@ -338,7 +366,7 @@ class GeminiCache {
       let diskSize = 0;
       let totalDiskSizeBytes = 0;
       
-      if (fs.existsSync(this.cacheDir)) {
+      if (this.cacheDir && fs.existsSync(this.cacheDir)) {
         const files = fs.readdirSync(this.cacheDir)
           .filter(file => file.endsWith('.json'));
         
@@ -388,7 +416,7 @@ class GeminiCache {
       this.memoryCache.clear();
       
       // Limpa disco
-      if (fs.existsSync(this.cacheDir)) {
+      if (this.cacheDir && fs.existsSync(this.cacheDir)) {
         const files = fs.readdirSync(this.cacheDir)
           .filter(file => file.endsWith('.json'));
         

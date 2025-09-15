@@ -32,8 +32,8 @@ RUN npm ci --only=production --no-audit --no-fund && \
 COPY --chown=botuser:nodejs . .
 
 # Criar diretórios necessários
-RUN mkdir -p /app/data /app/data/backups /app/logs && \
-    chown -R botuser:nodejs /app/data /app/logs
+RUN mkdir -p /app/data /app/data/backups /app/logs /app/cache && \
+    chown -R botuser:nodejs /app/data /app/logs /app/cache
 
 # Definir variáveis de ambiente
 ENV NODE_ENV=production
