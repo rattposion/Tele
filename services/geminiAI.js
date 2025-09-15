@@ -374,8 +374,13 @@ Responda apenas com o texto do conteúdo, sem explicações adicionais.`;
       const response = await result.response;
       const text = response.text();
       
+      // Validação para evitar erro de split em texto undefined/null
+      if (!text || typeof text !== 'string') {
+        throw new Error('Texto gerado pela IA está vazio ou inválido');
+      }
+      
       const generationTime = Date.now() - startTime;
-      const wordCount = text.split(' ').length;
+      const wordCount = text.trim().split(' ').filter(word => word.length > 0).length;
       
       return {
         text: text.trim(),

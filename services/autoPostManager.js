@@ -9,6 +9,7 @@ class AutoPostManager {
     this.isRunning = false;
     this.postInterval = null;
     this.dmInterval = null;
+    this.startTime = null;
     this.lastPostTime = new Map(); // Controla último post por grupo
     this.userInteractions = new Map(); // Rastreia interações dos usuários
   }
@@ -17,51 +18,114 @@ class AutoPostManager {
    * Inicia o sistema de postagens automáticas
    */
   async start() {
-    if (this.isRunning) {
-      console.log('⚠️ AutoPostManager já está rodando');
-      return;
+    try {
+      if (this.isRunning) {
+        console.log('⚠️ AutoPostManager já está rodando');
+        return {
+          success: false,
+          error: 'Sistema já está rodando',
+          activeGroups: 0,
+          nextPost: 'N/A'
+        };
+      }
+
+      this.isRunning = true;
+      this.startTime = new Date();
+      console.log('🚀 Iniciando AutoPostManager...');
+
+      // Verifica conexão com Gemini AI
+      const aiConnected = await this.geminiAI.testConnection();
+      if (!aiConnected) {
+        console.warn('⚠️ Gemini AI não conectado, usando conteúdo fallback');
+      }
+
+      // Inicia postagens automáticas a cada 3 horas
+      this.startAutoPosting();
+      
+      // Inicia DMs automáticas a cada 3 horas (com offset de 1h)
+      this.startAutoDM();
+      
+      // Carrega interações existentes
+      await this.loadUserInteractions();
+      
+      // Conta grupos ativos
+      const activeGroups = await database.get(`
+        SELECT COUNT(*) as count FROM groups WHERE auto_post_enabled = 1
+      `);
+      
+      const nextPost = moment().add(3, 'hours').format('HH:mm');
+      
+      console.log('✅ AutoPostManager iniciado com sucesso!');
+      
+      return {
+        success: true,
+        activeGroups: activeGroups?.count || 0,
+        nextPost: nextPost,
+        aiConnected: aiConnected
+      };
+    } catch (error) {
+      console.error('Erro ao iniciar AutoPostManager:', error);
+      return {
+        success: false,
+        error: error.message,
+        activeGroups: 0,
+        nextPost: 'N/A'
+      };
     }
-
-    this.isRunning = true;
-    console.log('🚀 Iniciando AutoPostManager...');
-
-    // Verifica conexão com Gemini AI
-    const aiConnected = await this.geminiAI.testConnection();
-    if (!aiConnected) {
-      console.warn('⚠️ Gemini AI não conectado, usando conteúdo fallback');
-    }
-
-    // Inicia postagens automáticas a cada 3 horas
-    this.startAutoPosting();
-    
-    // Inicia DMs automáticas a cada 3 horas (com offset de 1h)
-    this.startAutoDM();
-    
-    // Carrega interações existentes
-    await this.loadUserInteractions();
-    
-    console.log('✅ AutoPostManager iniciado com sucesso!');
   }
 
   /**
    * Para o sistema de postagens automáticas
    */
-  stop() {
-    if (!this.isRunning) return;
+  async stop() {
+    try {
+      if (!this.isRunning) {
+        return {
+          success: false,
+          error: 'Sistema já está parado',
+          postsToday: 0,
+          uptime: '0 minutos'
+        };
+      }
 
-    this.isRunning = false;
-    
-    if (this.postInterval) {
-      clearInterval(this.postInterval);
-      this.postInterval = null;
+      // Calcula tempo de atividade
+      const startTime = this.startTime || new Date();
+      const uptime = moment.duration(moment().diff(startTime)).humanize();
+      
+      // Obtém estatísticas do dia
+      const todayStats = await database.get(`
+        SELECT auto_posts_sent FROM daily_stats 
+        WHERE date = ?
+      `, [new Date().toISOString().split('T')[0]]);
+
+      this.isRunning = false;
+      
+      if (this.postInterval) {
+        clearInterval(this.postInterval);
+        this.postInterval = null;
+      }
+      
+      if (this.dmInterval) {
+        clearInterval(this.dmInterval);
+        this.dmInterval = null;
+      }
+      
+      console.log('🛑 AutoPostManager parado');
+      
+      return {
+        success: true,
+        postsToday: todayStats?.auto_posts_sent || 0,
+        uptime: uptime
+      };
+    } catch (error) {
+      console.error('Erro ao parar AutoPostManager:', error);
+      return {
+        success: false,
+        error: error.message,
+        postsToday: 0,
+        uptime: '0 minutos'
+      };
     }
-    
-    if (this.dmInterval) {
-      clearInterval(this.dmInterval);
-      this.dmInterval = null;
-    }
-    
-    console.log('🛑 AutoPostManager parado');
   }
 
   /**
@@ -482,6 +546,73 @@ class AutoPostManager {
       userInteractions: this.userInteractions.size,
       lastUpdate: new Date().toISOString()
     };
+  }
+
+  /**
+   * Obtém estatísticas específicas de DM
+   */
+  async getDMStats() {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const weekAgo = moment().subtract(7, 'days').format('YYYY-MM-DD');
+      
+      // Estatísticas de hoje
+      const todayStats = await database.get(`
+        SELECT 
+          COALESCE(dm_sent, 0) as sent,
+          COALESCE(dm_success, 0) as success,
+          COALESCE(dm_failed, 0) as failed
+        FROM daily_stats 
+        WHERE date = ?
+      `, [today]);
+      
+      const todayData = todayStats || { sent: 0, success: 0, failed: 0 };
+      const successRate = todayData.sent > 0 ? Math.round((todayData.success / todayData.sent) * 100) : 0;
+      
+      // Estatísticas da semana
+      const weekStats = await database.get(`
+        SELECT 
+          COALESCE(SUM(dm_sent), 0) as total,
+          COALESCE(SUM(dm_success), 0) as conversions,
+          COALESCE(AVG(dm_sent), 0) as dailyAverage
+        FROM daily_stats 
+        WHERE date >= ? AND date <= ?
+      `, [weekAgo, today]);
+      
+      const weekData = weekStats || { total: 0, conversions: 0, dailyAverage: 0 };
+      
+      // Usuários elegíveis para DM
+      const eligibleUsers = await database.get(`
+        SELECT COUNT(*) as count
+        FROM users 
+        WHERE dm_consent = 1 AND subscription_end > datetime('now')
+      `);
+      
+      return {
+        today: {
+          sent: todayData.sent,
+          success: todayData.success,
+          failed: todayData.failed,
+          successRate: successRate
+        },
+        week: {
+          total: weekData.total,
+          dailyAverage: Math.round(weekData.dailyAverage),
+          conversions: weekData.conversions
+        },
+        users: {
+          eligible: eligibleUsers?.count || 0,
+          activeInteractions: this.userInteractions.size
+        },
+        system: {
+          isRunning: this.isRunning,
+          nextDM: this.dmInterval ? moment().add(3, 'hours').format('HH:mm') : 'Parado'
+        }
+      };
+    } catch (error) {
+      console.error('Erro ao obter estatísticas de DM:', error);
+      return { error: error.message };
+    }
   }
 
   /**

@@ -520,9 +520,17 @@ ${this.getSubscriptionStatusMessage(dbUser)}
       // Ignora erros específicos do Telegram que não são críticos
       if (error.message && (
         error.message.includes('message is not modified') ||
-        error.message.includes('Bad Request: message is not modified')
+        error.message.includes('Bad Request: message is not modified') ||
+        error.message.includes('can\'t parse entities') ||
+        error.message.includes('Bad Request: can\'t parse entities')
       )) {
-        console.log('⚠️ Mensagem não modificada - ignorando erro');
+        console.log('⚠️ Erro conhecido do Telegram - ignorando:', error.message);
+        return;
+      }
+      
+      // Verifica se callbackQuery e suas propriedades existem antes de usar
+      if (!callbackQuery || !callbackQuery.message || !callbackQuery.message.chat) {
+        console.error('❌ CallbackQuery inválido ou incompleto');
         return;
       }
       
@@ -1753,13 +1761,16 @@ Segunda a Sexta: 9h às 18h`;
       const backupFile = await this.backupManager.createFullBackup();
       const backups = await this.backupManager.listBackups();
       
-      let response = `✅ **Backup criado com sucesso!**\n\n`;
-      response += `📁 Arquivo: \`${require('path').basename(backupFile)}\`\n`;
+      const fileName = this.escapeMarkdown(require('path').basename(backupFile));
+      
+      let response = `✅ *Backup criado com sucesso!*\n\n`;
+      response += `📁 Arquivo: \`${fileName}\`\n`;
       response += `📊 Total de backups: ${backups.length}\n\n`;
-      response += `**Backups recentes:**\n`;
+      response += `*Backups recentes:*\n`;
       
       backups.slice(0, 5).forEach(backup => {
-        response += `• ${backup.filename} (${backup.age_days} dias)\n`;
+        const escapedFilename = this.escapeMarkdown(backup.filename);
+        response += `• ${escapedFilename} (${backup.age_days} dias)\n`;
       });
       
       await this.bot.editMessageText(response, {
@@ -2454,6 +2465,15 @@ Segunda a Sexta: 9h às 18h`;
       console.error('Erro no teste de IA:', error);
       await this.bot.sendMessage(msg.chat.id, `❌ Erro no teste: ${error.message}`);
     }
+  }
+
+  // Função utilitária para escapar caracteres especiais do Markdown
+  escapeMarkdown(text) {
+    if (!text || typeof text !== 'string') {
+      return '';
+    }
+    // Escapa caracteres especiais do Markdown V2
+    return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
   }
 
   // Para o bot
