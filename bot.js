@@ -316,6 +316,147 @@ ${this.getSubscriptionStatusMessage(dbUser)}
           await this.handleStart({ chat: { id: chatId }, from: { id: userId } });
           break;
           
+        // Callbacks do painel administrativo
+        case 'admin_grupos':
+          await this.handleAdminGrupos(callbackQuery);
+          break;
+          
+        case 'admin_stats':
+          await this.handleAdminStats(callbackQuery);
+          break;
+          
+        case 'admin_usuarios':
+          await this.handleAdminUsuarios(callbackQuery);
+          break;
+          
+        case 'admin_backup':
+          await this.handleAdminBackup(callbackQuery);
+          break;
+          
+        case 'admin_autopost':
+          await this.handleAdminAutoPost(callbackQuery);
+          break;
+          
+        case 'admin_sistema':
+          await this.handleAdminSistema(callbackQuery);
+          break;
+          
+        case 'admin_config':
+          await this.handleAdminConfig(callbackQuery);
+          break;
+          
+        case 'admin_jobs':
+          await this.handleAdminJobs(callbackQuery);
+          break;
+          
+        case 'admin_refresh':
+          await this.handleAdminPanel({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        // Callbacks específicos - Grupos
+        case 'grupos_listar':
+          await this.handleGroups({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'grupos_scraping':
+          await this.bot.sendMessage(chatId, '🔍 Para iniciar scraping, use: `/scrape <grupo_id>`\n\nPrimeiro liste os grupos para ver os IDs disponíveis.', { parse_mode: 'Markdown' });
+          break;
+          
+        case 'grupos_jobs':
+          await this.handleScrapingJobs({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'grupos_add_grupo':
+          await this.handleAddGroup({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        // Callbacks específicos - Stats
+        case 'stats_basicas':
+          await this.handleStats({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'stats_avancadas':
+          await this.handleAdvancedStats({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'stats_assinantes':
+          await this.handleAssinantes({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'stats_dm':
+          await this.handleDMStats({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'stats_logs':
+          await this.handleLogs({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'stats_sistema':
+        case 'sistema_info':
+          await this.handleSystemInfo({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        // Callbacks específicos - Usuários
+        case 'users_listar':
+          await this.handleUsers({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'users_ban':
+          await this.bot.sendMessage(chatId, '🚫 Para banir um usuário, use: `/ban <user_id>`', { parse_mode: 'Markdown' });
+          break;
+          
+        case 'users_unban':
+          await this.bot.sendMessage(chatId, '✅ Para desbanir um usuário, use: `/unban <user_id>`', { parse_mode: 'Markdown' });
+          break;
+          
+        // Callbacks específicos - Backup
+        case 'backup_criar':
+          await this.handleBackup({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'backup_restaurar':
+          await this.handleRestore({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'backup_limpar':
+          await this.handleCleanup({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        // Callbacks específicos - AutoPost
+        case 'autopost_status':
+          await this.handleAutoPost({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'autopost_start':
+          await this.handleStartAuto({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'autopost_stop':
+          await this.handleStopAuto({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'autopost_test_ai':
+          await this.handleTestAI({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'autopost_dm_stats':
+          await this.handleDMStats({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        // Callbacks específicos - Config
+        case 'config_ver':
+          await this.handleConfig({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        // Callbacks específicos - Jobs
+        case 'jobs_ativos':
+          await this.handleScrapingJobs({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'jobs_scraping':
+          await this.handleScrapingJobs({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
         default:
           await this.bot.sendMessage(chatId, '❌ Ação não reconhecida.');
       }
@@ -1199,53 +1340,335 @@ Segunda a Sexta: 9h às 18h`;
        return;
      }
      
-     const message = `
- 🔧 *Painel Administrativo*
- 
- 📋 *Comandos Disponíveis:*
- 
- **👥 Gerenciamento de Grupos:**
- • \`/grupos\` - Listar grupos
- • \`/scrape <grupo_id>\` - Iniciar scraping
- • \`/membros <grupo_id>\` - Ver membros
- • \`/autoadd <user_id> <group_id>\` - Adicionar usuário
- • \`/bulkadd <group_id>\` - Adição em massa
- 
- **💾 Backup & Replicação:**
- • \`/backup\` - Criar backup completo
- • \`/replicar <origem> <destino>\` - Replicar membros
- • \`/restaurar\` - Listar backups disponíveis
- • \`/limpar [dias]\` - Limpar backups antigos
- 
- **📊 Monitoramento:**
- • \`/jobs\` - Ver jobs ativos
- • \`/logs\` - Ver logs recentes
- • \`/assinantes\` - Ver assinantes
- • \`/stats\` - Estatísticas básicas
- • \`/estatisticas\` - Estatísticas avançadas
- • \`/sistema\` - Informações do sistema
- 
- **👥 Gerenciamento de Usuários:**
- • \`/usuarios\` - Listar usuários
- • \`/ban <user_id>\` - Banir usuário
- • \`/unban <user_id>\` - Desbanir usuário
- 
- **⚙️ Configurações:**
- • \`/config\` - Ver configurações
- • \`/set <chave> <valor>\` - Alterar configuração
- 
- **🤖 Auto-Post & IA:**
- • \`/autopost\` - Status do sistema
- • \`/startauto\` - Iniciar auto-post
- • \`/stopauto\` - Parar auto-post
- • \`/togglepost <id>\` - Ativar/desativar grupo
- • \`/dmstats\` - Estatísticas de DM
- • \`/testai\` - Testar geração de conteúdo
- 
- 💡 *Dica:* Sistema completo com IA, auto-post, DMs automáticas e monitoramento avançado.`;
+     const message = `🔧 *Painel Administrativo*\n\n📋 Selecione uma categoria para gerenciar:`;
      
-     await this.bot.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown' });
+     const keyboard = {
+       inline_keyboard: [
+         [
+           { text: '👥 Grupos', callback_data: 'admin_grupos' },
+           { text: '📊 Estatísticas', callback_data: 'admin_stats' }
+         ],
+         [
+           { text: '👤 Usuários', callback_data: 'admin_usuarios' },
+           { text: '💾 Backup', callback_data: 'admin_backup' }
+         ],
+         [
+           { text: '🤖 Auto-Post', callback_data: 'admin_autopost' },
+           { text: '⚙️ Sistema', callback_data: 'admin_sistema' }
+         ],
+         [
+           { text: '🔧 Configurações', callback_data: 'admin_config' },
+           { text: '📋 Jobs', callback_data: 'admin_jobs' }
+         ],
+         [
+           { text: '🔄 Atualizar', callback_data: 'admin_refresh' }
+         ]
+       ]
+     };
+     
+     await this.bot.sendMessage(msg.chat.id, message, {
+       parse_mode: 'Markdown',
+       reply_markup: keyboard
+     });
    }
+
+  // === MÉTODOS DO PAINEL ADMINISTRATIVO INTERATIVO ===
+  
+  async handleAdminGrupos(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `👥 *Gerenciamento de Grupos*\n\nEscolha uma ação:`;
+    
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '📋 Listar Grupos', callback_data: 'grupos_listar' },
+          { text: '👥 Ver Membros', callback_data: 'grupos_membros' }
+        ],
+        [
+          { text: '🔍 Iniciar Scraping', callback_data: 'grupos_scraping' },
+          { text: '➕ Adicionar Usuário', callback_data: 'grupos_add_user' }
+        ],
+        [
+          { text: '📦 Adição em Massa', callback_data: 'grupos_bulk_add' },
+          { text: '🔄 Replicar Membros', callback_data: 'grupos_replicar' }
+        ],
+        [
+          { text: '📊 Jobs de Scraping', callback_data: 'grupos_jobs' },
+          { text: '➕ Adicionar Grupo', callback_data: 'grupos_add_grupo' }
+        ],
+        [
+          { text: '🔙 Voltar', callback_data: 'admin_refresh' }
+        ]
+      ]
+    };
+    
+    await this.bot.editMessageText(message, {
+      chat_id: chatId,
+      message_id: callbackQuery.message.message_id,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  }
+  
+  async handleAdminStats(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `📊 *Estatísticas e Monitoramento*\n\nEscolha uma opção:`;
+    
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '📈 Stats Básicas', callback_data: 'stats_basicas' },
+          { text: '📊 Stats Avançadas', callback_data: 'stats_avancadas' }
+        ],
+        [
+          { text: '👥 Assinantes', callback_data: 'stats_assinantes' },
+          { text: '💬 DM Stats', callback_data: 'stats_dm' }
+        ],
+        [
+          { text: '📋 Logs Recentes', callback_data: 'stats_logs' },
+          { text: '⚙️ Info Sistema', callback_data: 'stats_sistema' }
+        ],
+        [
+          { text: '🔙 Voltar', callback_data: 'admin_refresh' }
+        ]
+      ]
+    };
+    
+    await this.bot.editMessageText(message, {
+      chat_id: chatId,
+      message_id: callbackQuery.message.message_id,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  }
+  
+  async handleAdminUsuarios(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `👤 *Gerenciamento de Usuários*\n\nEscolha uma ação:`;
+    
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '📋 Listar Usuários', callback_data: 'users_listar' },
+          { text: '🚫 Banir Usuário', callback_data: 'users_ban' }
+        ],
+        [
+          { text: '✅ Desbanir Usuário', callback_data: 'users_unban' },
+          { text: '🔍 Buscar Usuário', callback_data: 'users_buscar' }
+        ],
+        [
+          { text: '🔙 Voltar', callback_data: 'admin_refresh' }
+        ]
+      ]
+    };
+    
+    await this.bot.editMessageText(message, {
+      chat_id: chatId,
+      message_id: callbackQuery.message.message_id,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  }
+  
+  async handleAdminBackup(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `💾 *Backup e Replicação*\n\nEscolha uma ação:`;
+    
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '💾 Criar Backup', callback_data: 'backup_criar' },
+          { text: '📋 Listar Backups', callback_data: 'backup_listar' }
+        ],
+        [
+          { text: '🔄 Restaurar Backup', callback_data: 'backup_restaurar' },
+          { text: '🗑️ Limpar Backups', callback_data: 'backup_limpar' }
+        ],
+        [
+          { text: '🔙 Voltar', callback_data: 'admin_refresh' }
+        ]
+      ]
+    };
+    
+    await this.bot.editMessageText(message, {
+      chat_id: chatId,
+      message_id: callbackQuery.message.message_id,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  }
+  
+  async handleAdminAutoPost(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `🤖 *Auto-Post e IA*\n\nEscolha uma ação:`;
+    
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '📊 Status Auto-Post', callback_data: 'autopost_status' },
+          { text: '▶️ Iniciar Auto-Post', callback_data: 'autopost_start' }
+        ],
+        [
+          { text: '⏹️ Parar Auto-Post', callback_data: 'autopost_stop' },
+          { text: '🔄 Toggle Grupo', callback_data: 'autopost_toggle' }
+        ],
+        [
+          { text: '🤖 Testar IA', callback_data: 'autopost_test_ai' },
+          { text: '💬 Stats DM', callback_data: 'autopost_dm_stats' }
+        ],
+        [
+          { text: '🔙 Voltar', callback_data: 'admin_refresh' }
+        ]
+      ]
+    };
+    
+    await this.bot.editMessageText(message, {
+      chat_id: chatId,
+      message_id: callbackQuery.message.message_id,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  }
+  
+  async handleAdminSistema(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `⚙️ *Informações do Sistema*\n\nEscolha uma opção:`;
+    
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '💻 Info Sistema', callback_data: 'sistema_info' },
+          { text: '📊 Estatísticas', callback_data: 'sistema_stats' }
+        ],
+        [
+          { text: '📋 Logs Sistema', callback_data: 'sistema_logs' },
+          { text: '🔄 Status Serviços', callback_data: 'sistema_status' }
+        ],
+        [
+          { text: '🔙 Voltar', callback_data: 'admin_refresh' }
+        ]
+      ]
+    };
+    
+    await this.bot.editMessageText(message, {
+      chat_id: chatId,
+      message_id: callbackQuery.message.message_id,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  }
+  
+  async handleAdminConfig(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `🔧 *Configurações*\n\nEscolha uma ação:`;
+    
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '📋 Ver Configurações', callback_data: 'config_ver' },
+          { text: '✏️ Alterar Config', callback_data: 'config_alterar' }
+        ],
+        [
+          { text: '🔄 Resetar Config', callback_data: 'config_reset' },
+          { text: '💾 Backup Config', callback_data: 'config_backup' }
+        ],
+        [
+          { text: '🔙 Voltar', callback_data: 'admin_refresh' }
+        ]
+      ]
+    };
+    
+    await this.bot.editMessageText(message, {
+      chat_id: chatId,
+      message_id: callbackQuery.message.message_id,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  }
+  
+  async handleAdminJobs(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `📋 *Gerenciamento de Jobs*\n\nEscolha uma ação:`;
+    
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '📋 Jobs Ativos', callback_data: 'jobs_ativos' },
+          { text: '📊 Jobs Scraping', callback_data: 'jobs_scraping' }
+        ],
+        [
+          { text: '⏹️ Parar Job', callback_data: 'jobs_parar' },
+          { text: '🔄 Reiniciar Job', callback_data: 'jobs_reiniciar' }
+        ],
+        [
+          { text: '🔙 Voltar', callback_data: 'admin_refresh' }
+        ]
+      ]
+    };
+    
+    await this.bot.editMessageText(message, {
+      chat_id: chatId,
+      message_id: callbackQuery.message.message_id,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  }
 
   // === MÉTODOS DE BACKUP E REPLICAÇÃO ===
   
