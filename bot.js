@@ -21,7 +21,7 @@ class TelegramSubscriptionBot {
     }
     
     // Usar polling em desenvolvimento local para evitar conflito com Railway
-    const isLocal = process.env.NODE_ENV === 'development' || !process.env.RAILWAY_ENVIRONMENT;
+    const isLocal = process.env.NODE_ENV === 'development';
     
     if (isLocal) {
       // Modo polling para desenvolvimento local
@@ -31,6 +31,9 @@ class TelegramSubscriptionBot {
       // Modo webhook para produção (Railway)
       this.bot = new TelegramBot(this.token, { webHook: true });
       console.log('🔄 Bot configurado em modo webhook (produção)');
+      
+      // Configura webhook do Telegram
+      this.setupWebhook();
     }
     
     // Inicializa serviços após criar o bot
@@ -42,6 +45,39 @@ class TelegramSubscriptionBot {
     this.setupHandlers();
     
     console.log('🤖 Bot Telegram inicializado');
+  }
+
+  // Configura webhook do Telegram para produção
+  async setupWebhook() {
+    try {
+      const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL;
+      
+      if (!webhookUrl) {
+        console.error('❌ TELEGRAM_WEBHOOK_URL não configurada');
+        return;
+      }
+      
+      // Remove webhook existente
+      await this.bot.deleteWebHook();
+      console.log('🗑️ Webhook anterior removido');
+      
+      // Configura novo webhook
+      await this.bot.setWebHook(webhookUrl);
+      console.log(`✅ Webhook configurado: ${webhookUrl}`);
+      
+      // Verifica se webhook foi configurado corretamente
+      const webhookInfo = await this.bot.getWebHookInfo();
+      console.log('📋 Info do webhook:', {
+        url: webhookInfo.url,
+        has_custom_certificate: webhookInfo.has_custom_certificate,
+        pending_update_count: webhookInfo.pending_update_count,
+        last_error_date: webhookInfo.last_error_date,
+        last_error_message: webhookInfo.last_error_message
+      });
+      
+    } catch (error) {
+      console.error('❌ Erro ao configurar webhook:', error.message);
+    }
   }
 
   // Configura todos os handlers do bot

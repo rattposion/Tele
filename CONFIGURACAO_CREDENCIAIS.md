@@ -83,7 +83,7 @@ INFINITEPAY_WEBHOOK_SECRET=seu_webhook_secret_real_infinitepay
 ### 1. Verificar Status do Sistema
 ```bash
 # Acesse no navegador:
-http://localhost:3000/health
+tele-production-8fce.up.railway.app/health
 ```
 
 ### 2. Testar Funcionalidades

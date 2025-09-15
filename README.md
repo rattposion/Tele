@@ -193,7 +193,7 @@ docker-compose logs -f
        server_name seudominio.com;
        
        location / {
-           proxy_pass http://localhost:3000;
+           proxy_pass tele-production-8fce.up.railway.app;
            proxy_http_version 1.1;
            proxy_set_header Upgrade $http_upgrade;
            proxy_set_header Connection 'upgrade';
@@ -233,7 +233,7 @@ docker-compose logs -f
 
 ### Health Check
 ```bash
-curl http://localhost:3000/health
+curl tele-production-8fce.up.railway.app/health
 ```
 
 ### Logs
@@ -291,7 +291,7 @@ npm run dev
 ### Teste de webhook
 ```bash
 # Simule webhook InfinitePay
-curl -X POST http://localhost:3000/webhook/infinitepay \
+curl -X POST tele-production-8fce.up.railway.app/webhook/infinitepay \
   -H "Content-Type: application/json" \
   -d '{
     "event": "charge.paid",
