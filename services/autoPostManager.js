@@ -471,6 +471,20 @@ class AutoPostManager {
   }
 
   /**
+   * Obtém o status atual do sistema
+   */
+  getStatus() {
+    return {
+      isRunning: this.isRunning,
+      hasPostInterval: !!this.postInterval,
+      hasDMInterval: !!this.dmInterval,
+      activeGroups: this.lastPostTime.size,
+      userInteractions: this.userInteractions.size,
+      lastUpdate: new Date().toISOString()
+    };
+  }
+
+  /**
    * Obtém estatísticas do sistema de auto-post
    */
   async getStats() {

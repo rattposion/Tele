@@ -1,10 +1,15 @@
-# Use Node.js LTS como base
-# Em caso de erro 500 do Docker Hub, use registries alternativos:
-# FROM quay.io/node:18-alpine
-# FROM mcr.microsoft.com/node:18-alpine
-FROM node:18-alpine
+# Dockerfile Otimizado com Soluções para Problemas de Conectividade
+# Use registries alternativos em caso de problemas com Docker Hub
 
-# Instalar dependências do sistema com limpeza de cache
+# Opção 1: Docker Hub (padrão)
+FROM node:18-alpine AS base
+
+# Opção 2: Registry alternativo (descomente se necessário)
+# FROM registry.gitlab.com/node:18-alpine AS base
+# FROM quay.io/node:18-alpine AS base
+# FROM mcr.microsoft.com/node:18-alpine AS base
+
+# Configurar timezone e instalar dependências do sistema
 RUN apk add --no-cache \
     sqlite \
     tzdata \
@@ -21,10 +26,10 @@ RUN addgroup -g 1001 -S nodejs && \
 # Criar diretório da aplicação
 WORKDIR /app
 
-# Copiar arquivos de dependências primeiro (otimização de cache)
+# Copiar arquivos de dependências primeiro (melhor cache)
 COPY --chown=botuser:nodejs package*.json ./
 
-# Instalar dependências com otimizações
+# Instalar dependências com cache otimizado
 RUN npm ci --only=production --no-audit --no-fund && \
     npm cache clean --force
 

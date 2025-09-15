@@ -1,5 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
 const moment = require('moment');
+const fetch = require('node-fetch');
 const database = require('./db');
 const infinitePayService = require('./services/infinitepay');
 const GroupManager = require('./services/groupManager');
@@ -100,6 +101,7 @@ class TelegramSubscriptionBot {
     this.bot.onText(/\/bulkadd (.+)/, (msg, match) => this.handleBulkAdd(msg, match));
     this.bot.onText(/\/jobs/, (msg) => this.handleScrapingJobs(msg));
     this.bot.onText(/\/logs/, (msg) => this.handleLogs(msg));
+    this.bot.onText(/\/admin/, (msg) => this.handleAdminPanel(msg));
     this.bot.onText(/\/painel/, (msg) => this.handleAdminPanel(msg));
     this.bot.onText(/\/backup/, (msg) => this.handleBackup(msg));
     this.bot.onText(/\/replicar (.+) (.+)/, (msg, match) => this.handleReplicate(msg, match));
@@ -123,7 +125,6 @@ class TelegramSubscriptionBot {
     this.bot.on('callback_query', (callbackQuery) => this.handleCallbackQuery(callbackQuery));
     
     // Eventos de grupo para capturar membros
-    this.bot.on('callback_query', (callbackQuery) => this.handleCallbackQuery(callbackQuery));
     this.bot.on('new_chat_members', (msg) => this.handleNewChatMembers(msg));
     this.bot.on('left_chat_member', (msg) => this.handleLeftChatMember(msg));
     this.bot.on('message', (msg) => this.handleMessage(msg));
@@ -206,13 +207,21 @@ ${this.getSubscriptionStatusMessage(dbUser)}
       // Envia imagem se configurada e válida
       const productImageUrl = process.env.PRODUCT_IMAGE_URL;
       
-      if (productImageUrl && productImageUrl.trim() && productImageUrl.startsWith('http')) {
+      if (productImageUrl && productImageUrl.trim() && productImageUrl.startsWith('http') && !productImageUrl.includes('exemplo.com')) {
         try {
-          await this.bot.sendPhoto(chatId, productImageUrl, {
-            caption: welcomeMessage,
-            parse_mode: 'Markdown',
-            reply_markup: keyboard
-          });
+          // Valida se a URL é uma imagem válida
+          const response = await fetch(productImageUrl, { method: 'HEAD' });
+          const contentType = response.headers.get('content-type');
+          
+          if (response.ok && contentType && contentType.startsWith('image/')) {
+            await this.bot.sendPhoto(chatId, productImageUrl, {
+              caption: welcomeMessage,
+              parse_mode: 'Markdown',
+              reply_markup: keyboard
+            });
+          } else {
+            throw new Error('URL não retorna uma imagem válida');
+          }
         } catch (imageError) {
           console.warn('⚠️ Erro ao enviar imagem, enviando apenas texto:', imageError.message);
           await this.bot.sendMessage(chatId, welcomeMessage, {
@@ -507,7 +516,22 @@ ${this.getSubscriptionStatusMessage(dbUser)}
       }
     } catch (error) {
       console.error('❌ Erro no callback query:', error.message);
-      await this.bot.sendMessage(callbackQuery.message.chat.id, '❌ Erro interno. Tente novamente.');
+      
+      // Ignora erros específicos do Telegram que não são críticos
+      if (error.message && (
+        error.message.includes('message is not modified') ||
+        error.message.includes('Bad Request: message is not modified')
+      )) {
+        console.log('⚠️ Mensagem não modificada - ignorando erro');
+        return;
+      }
+      
+      // Para outros erros, notifica o usuário
+      try {
+        await this.bot.sendMessage(callbackQuery.message.chat.id, '❌ Erro interno. Tente novamente.');
+      } catch (sendError) {
+        console.error('❌ Erro ao enviar mensagem de erro:', sendError.message);
+      }
     }
   }
 
@@ -2266,20 +2290,21 @@ Segunda a Sexta: 9h às 18h`;
     }
     
     try {
-      const status = await this.autoPostManager.getStatus();
+      const status = this.autoPostManager.getStatus();
       const stats = await this.autoPostManager.getStats();
       
       let response = `🤖 **Sistema de Auto-Post**\n\n`;
       response += `**📊 Status:**\n`;
-      response += `• Sistema: ${status.isActive ? '✅ Ativo' : '❌ Inativo'}\n`;
+      response += `• Sistema: ${status.isRunning ? '✅ Ativo' : '❌ Inativo'}\n`;
       response += `• Grupos ativos: ${status.activeGroups}\n`;
-      response += `• Próximo post: ${status.nextPost || 'N/A'}\n\n`;
+      response += `• Interações: ${status.userInteractions}\n`;
+      response += `• Última atualização: ${moment(status.lastUpdate).format('DD/MM HH:mm')}\n\n`;
       
       response += `**📈 Estatísticas:**\n`;
-      response += `• Posts hoje: ${stats.postsToday}\n`;
-      response += `• Posts esta semana: ${stats.postsThisWeek}\n`;
-      response += `• Total de posts: ${stats.totalPosts}\n`;
-      response += `• Taxa de sucesso: ${stats.successRate}%\n\n`;
+      response += `• Total de posts: ${stats.totalPosts || 0}\n`;
+      response += `• Total de DMs: ${stats.totalDMs || 0}\n`;
+      response += `• Último post: ${stats.lastPost ? moment(stats.lastPost).format('DD/MM HH:mm') : 'Nunca'}\n`;
+      response += `• Último DM: ${stats.lastDM ? moment(stats.lastDM).format('DD/MM HH:mm') : 'Nunca'}\n\n`;
       
       response += `**🎯 Comandos:**\n`;
       response += `• \`/startauto\` - Iniciar sistema\n`;

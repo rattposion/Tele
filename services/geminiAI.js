@@ -356,6 +356,48 @@ Gere conteúdo criativo:`;
   }
 
   /**
+   * Método genérico para gerar conteúdo
+   * @param {Object} params - Parâmetros para geração
+   * @returns {Object} Conteúdo gerado
+   */
+  async generateContent(params = {}) {
+    try {
+      const startTime = Date.now();
+      const { type = 'promotional', topic = 'conteúdo premium', style = 'engaging' } = params;
+      
+      const prompt = `
+Gere um conteúdo ${type} sobre "${topic}" com estilo ${style}.
+O conteúdo deve ser atrativo, profissional e adequado para marketing digital.
+Responda apenas com o texto do conteúdo, sem explicações adicionais.`;
+      
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      
+      const generationTime = Date.now() - startTime;
+      const wordCount = text.split(' ').length;
+      
+      return {
+        text: text.trim(),
+        type: type,
+        wordCount: wordCount,
+        generationTime: generationTime,
+        quality: Math.min(10, Math.max(1, Math.floor(wordCount / 10)))
+      };
+      
+    } catch (error) {
+      console.error('Erro ao gerar conteúdo:', error);
+      return {
+        text: 'Conteúdo de exemplo gerado automaticamente.',
+        type: params.type || 'promotional',
+        wordCount: 5,
+        generationTime: 0,
+        quality: 5
+      };
+    }
+  }
+
+  /**
    * Testa a conexão com Gemini AI
    * @returns {boolean} Status da conexão
    */

@@ -13,7 +13,7 @@
   },
   "environments": {
     "production": {
-      "env": {
+      "variables": {
         "NODE_ENV": "production",
         "PORT": "$PORT"
       }
