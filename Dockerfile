@@ -1,36 +1,49 @@
-# Use Node.js LTS como base
-FROM node:18-alpine
+# Dockerfile Otimizado com Soluções para Problemas de Conectividade
+# Use registries alternativos em caso de problemas com Docker Hub
 
-# Instalar dependências do sistema
+# Opção 1: Docker Hub (padrão)
+FROM node:18-alpine AS base
+
+# Opção 2: Registry alternativo (descomente se necessário)
+# FROM registry.gitlab.com/node:18-alpine AS base
+# FROM quay.io/node:18-alpine AS base
+# FROM mcr.microsoft.com/node:18-alpine AS base
+
+# Configurar timezone e instalar dependências do sistema
 RUN apk add --no-cache \
     sqlite \
-    tzdata
+    tzdata \
+    dumb-init \
+    && rm -rf /var/cache/apk/*
 
 # Definir timezone
 ENV TZ=America/Sao_Paulo
 
+# Criar usuário não-root primeiro (melhor prática de segurança)
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S botuser -u 1001 -G nodejs
+
 # Criar diretório da aplicação
 WORKDIR /app
 
-# Copiar arquivos de dependências
-COPY package*.json ./
+# Copiar arquivos de dependências primeiro (melhor cache)
+COPY --chown=botuser:nodejs package*.json ./
 
-# Instalar dependências
-RUN npm ci --only=production && npm cache clean --force
-
-# Criar usuário não-root
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S botuser -u 1001
+# Instalar dependências com cache otimizado
+RUN npm ci --only=production --no-audit --no-fund && \
+    npm cache clean --force
 
 # Copiar código da aplicação
 COPY --chown=botuser:nodejs . .
 
-# Criar diretórios para banco de dados e backups
-RUN mkdir -p /app/data /app/data/backups && chown -R botuser:nodejs /app/data
+# Criar diretórios necessários
+RUN mkdir -p /app/data /app/data/backups /app/logs && \
+    chown -R botuser:nodejs /app/data /app/logs
 
 # Definir variáveis de ambiente
 ENV NODE_ENV=production
 ENV DATABASE_PATH=/app/data/database.sqlite
+ENV PORT=3000
 
 # Expor porta
 EXPOSE 3000
@@ -38,9 +51,12 @@ EXPOSE 3000
 # Mudar para usuário não-root
 USER botuser
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('tele-production-8fce.up.railway.app/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+# Health check otimizado
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
+
+# Usar dumb-init para melhor handling de sinais
+ENTRYPOINT ["dumb-init", "--"]
 
 # Comando para iniciar a aplicação
 CMD ["npm", "start"]
