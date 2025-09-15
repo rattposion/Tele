@@ -954,6 +954,89 @@ class GroupManager {
       throw error;
     }
   }
+
+  // === ADICIONAR GRUPO ===
+  
+  /**
+   * Adiciona um grupo ao banco de dados
+   * @param {string|number} groupId - ID do grupo no Telegram
+   * @param {string} customName - Nome personalizado para o grupo
+   * @param {string} username - Username do grupo (opcional)
+   * @returns {Object} Resultado da operação
+   */
+  async addGroup(groupId, customName, username = null) {
+    try {
+      await this.checkRateLimit('getChat');
+      
+      // Buscar informações do grupo no Telegram
+      const chat = await this.bot.getChat(groupId);
+      
+      // Verificar se é um grupo válido
+      if (!['group', 'supergroup', 'channel'].includes(chat.type)) {
+        return {
+          success: false,
+          error: 'O chat especificado não é um grupo válido'
+        };
+      }
+      
+      // Obter contagem de membros (com tratamento para supergrupos)
+      let memberCount = 0;
+      try {
+        memberCount = await this.bot.getChatMemberCount(groupId);
+      } catch (countError) {
+        // Se falhar ao obter contagem, usar 0 como padrão
+        console.warn(`Não foi possível obter contagem de membros para ${groupId}:`, countError.message);
+        memberCount = 0;
+      }
+      
+      // Preparar dados do grupo
+      const groupData = {
+        id: chat.id,
+        title: customName || chat.title,
+        username: username || chat.username,
+        type: chat.type,
+        member_count: memberCount
+      };
+      
+      // Salvar no banco de dados
+      const savedGroupId = await this.db.saveGroup(groupData);
+      
+      // Log da ação
+      await this.db.saveActionLog(
+        'group_added',
+        null,
+        savedGroupId,
+        `Grupo ${groupData.title} adicionado com ${memberCount} membros`
+      );
+      
+      return {
+        success: true,
+        groupId: savedGroupId,
+        groupData: {
+          ...groupData,
+          id: savedGroupId
+        }
+      };
+      
+    } catch (error) {
+      console.error('Erro ao adicionar grupo:', error);
+      
+      // Log do erro
+      await this.db.saveActionLog(
+        'group_add_failed',
+        null,
+        null,
+        `Erro ao adicionar grupo ${groupId}: ${error.message}`,
+        false,
+        error.message
+      );
+      
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
 }
 
 module.exports = GroupManager;
