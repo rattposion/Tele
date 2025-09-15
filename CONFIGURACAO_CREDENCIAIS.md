@@ -32,7 +32,26 @@ TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
 4. Siga as instruções
 5. Copie o token fornecido
 
-### 2. Credenciais da InfinitePay (Produção)
+### 2. API Key do Gemini AI
+**Status:** ⚠️ Pendente (usando conteúdo fallback)
+
+**Como configurar:**
+```bash
+# No arquivo .env, substitua:
+GEMINI_API_KEY=sua_api_key_gemini_aqui
+
+# Por uma API key real do Google AI Studio
+GEMINI_API_KEY=AIzaSyC...
+```
+
+**Para obter a API key:**
+1. Acesse https://makersuite.google.com/app/apikey
+2. Faça login com sua conta Google
+3. Clique em "Create API Key"
+4. Copie a chave gerada
+5. Cole no arquivo .env
+
+### 3. Credenciais da InfinitePay (Produção)
 **Status:** ✅ Configurado com placeholders (funcional para desenvolvimento)
 
 **Para produção, substitua no `.env`:**
@@ -56,6 +75,7 @@ INFINITEPAY_WEBHOOK_SECRET=seu_webhook_secret_real_infinitepay
 
 ### ⚠️ Aguardando Configuração:
 - 📱 Token do Telegram (para eliminar erros de polling)
+- 🤖 API Key do Gemini AI (para geração de conteúdo inteligente)
 - 💰 Credenciais reais da InfinitePay (para pagamentos em produção)
 
 ## 🚀 Como Testar o Sistema
