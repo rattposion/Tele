@@ -1,6 +1,7 @@
 const database = require('../db');
 const GeminiAIService = require('./geminiAI');
 const moment = require('moment');
+const logger = require('../utils/logger');
 
 class AutoPostManager {
   constructor(bot) {
@@ -18,9 +19,15 @@ class AutoPostManager {
    * Inicia o sistema de postagens automáticas
    */
   async start() {
+    const startTime = Date.now();
+    logger.info('Iniciando AutoPostManager', { timestamp: new Date().toISOString() });
+    
     try {
       if (this.isRunning) {
-        console.log('⚠️ AutoPostManager já está rodando');
+        logger.warn('AutoPostManager já está rodando', {
+          status: 'already_running',
+          action: 'start_rejected'
+        });
         return {
           success: false,
           error: 'Sistema já está rodando',
@@ -31,21 +38,30 @@ class AutoPostManager {
 
       this.isRunning = true;
       this.startTime = new Date();
-      console.log('🚀 Iniciando AutoPostManager...');
-
+      
       // Verifica conexão com Gemini AI
+      logger.info('Testando conexão com Gemini AI');
       const aiConnected = await this.geminiAI.testConnection();
+      
       if (!aiConnected) {
-        console.warn('⚠️ Gemini AI não conectado, usando conteúdo fallback');
+        logger.warn('Gemini AI não conectado, usando conteúdo fallback', {
+          fallbackMode: true,
+          impact: 'Conteúdo será gerado usando templates pré-definidos'
+        });
+      } else {
+        logger.info('Gemini AI conectado com sucesso');
       }
 
       // Inicia postagens automáticas a cada 3 horas
+      logger.info('Iniciando sistema de auto-posting');
       this.startAutoPosting();
       
       // Inicia DMs automáticas a cada 3 horas (com offset de 1h)
+      logger.info('Iniciando sistema de auto-DMs');
       this.startAutoDM();
       
       // Carrega interações existentes
+      logger.info('Carregando interações de usuários');
       await this.loadUserInteractions();
       
       // Conta grupos ativos
@@ -55,7 +71,19 @@ class AutoPostManager {
       
       const nextPost = moment().add(3, 'hours').format('HH:mm');
       
-      console.log('✅ AutoPostManager iniciado com sucesso!');
+      const duration = Date.now() - startTime;
+      logger.performance('AutoPostManager_start', duration, {
+        aiConnected,
+        activeGroups: activeGroups?.count || 0,
+        services: ['auto-posting', 'auto-dms', 'user-interactions']
+      });
+      
+      logger.info('AutoPostManager iniciado com sucesso', {
+        duration,
+        activeGroups: activeGroups?.count || 0,
+        nextPost,
+        aiStatus: aiConnected ? 'connected' : 'fallback'
+      });
       
       return {
         success: true,
@@ -64,7 +92,12 @@ class AutoPostManager {
         aiConnected: aiConnected
       };
     } catch (error) {
-      console.error('Erro ao iniciar AutoPostManager:', error);
+      const duration = Date.now() - startTime;
+      logger.error('Erro ao iniciar AutoPostManager', error, {
+        duration,
+        critical: true,
+        action: 'start_failed'
+      });
       return {
         success: false,
         error: error.message,

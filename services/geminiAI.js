@@ -1,5 +1,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const database = require('../db');
+const logger = require('../utils/logger');
+const geminiCache = require('../utils/geminiCache');
 
 class GeminiAIService {
   constructor() {
@@ -15,7 +17,21 @@ class GeminiAIService {
    * @returns {Object} Conteúdo gerado
    */
   async generateGroupPost(theme = 'assinatura premium', targetAudience = 'adultos') {
+    const startTime = Date.now();
+    const cacheParams = { theme, targetAudience };
+    
     try {
+      // Verifica cache primeiro
+      const cachedContent = await geminiCache.get('generateGroupPost', cacheParams);
+      if (cachedContent) {
+        logger.performance('generateGroupPost_cache_hit', Date.now() - startTime, {
+          theme,
+          targetAudience,
+          cacheSource: cachedContent.cacheSource
+        });
+        return cachedContent;
+      }
+      
       const prompt = `
 Você é um assistente de marketing especializado em conteúdo adulto +18 para Telegram. Gere um anúncio ÚNICO e chamativo para grupos de vendas de assinaturas premium de conteúdo adulto.
 
@@ -41,7 +57,15 @@ Formato de resposta (JSON):
 
 Gere conteúdo único e provocante:`;
 
-      const result = await this.model.generateContent(prompt);
+      logger.geminiApiCall('generateGroupPost', prompt, {
+        theme,
+        targetAudience,
+        promptLength: prompt.length
+      });
+
+      const result = await this.executeWithRetry(async () => {
+        return await this.model.generateContent(prompt);
+      }, 'generateGroupPost');
       const response = await result.response;
       const text = response.text();
       
@@ -73,14 +97,30 @@ Gere conteúdo único e provocante:`;
         timestamp: new Date().toISOString()
       });
       
-      return {
+      const finalContent = {
         ...content,
         generatedAt: new Date().toISOString(),
         type: 'group_post'
       };
       
+      // Salva no cache
+      await geminiCache.set('generateGroupPost', cacheParams, finalContent);
+      
+      const duration = Date.now() - startTime;
+      logger.performance('generateGroupPost', duration, {
+        theme,
+        targetAudience,
+        contentLength: JSON.stringify(content).length
+      });
+      
+      return finalContent;
+      
     } catch (error) {
-      console.error('Erro ao gerar conteúdo para grupo:', error);
+      logger.geminiApiFallback('generateGroupPost', error.message, {
+        theme,
+        targetAudience,
+        duration: Date.now() - startTime
+      });
       
       // Fallback com conteúdo pré-definido
       return this.getFallbackGroupContent();
@@ -94,8 +134,35 @@ Gere conteúdo único e provocante:`;
    * @returns {Object} Mensagem personalizada
    */
   async generatePersonalizedDM(user, campaignType = 'subscription') {
+    const startTime = Date.now();
+    const userName = user.first_name || user.username || 'amigo(a)';
+    const cacheParams = { 
+      campaignType, 
+      userStatus: user.status || 'novo',
+      userType: user.is_premium ? 'premium' : 'regular'
+    };
+    
     try {
-      const userName = user.first_name || user.username || 'amigo(a)';
+      // Verifica cache primeiro
+      const cachedContent = await geminiCache.get('generatePersonalizedDM', cacheParams);
+      if (cachedContent) {
+        // Personaliza o nome do usuário no conteúdo cacheado
+        const personalizedContent = {
+          ...cachedContent,
+          message: cachedContent.message.replace(/amigo\(a\)|querido\(a\)|amor/gi, userName),
+          userName,
+          userId: user.telegram_id,
+          cached: true
+        };
+        
+        logger.performance('generatePersonalizedDM_cache_hit', Date.now() - startTime, {
+          userId: user.telegram_id,
+          campaignType,
+          cacheSource: cachedContent.cacheSource
+        });
+        
+        return personalizedContent;
+      }
       
       const prompt = `
 Você é um assistente de marketing para mensagens privadas de conteúdo adulto +18 no Telegram. Gere uma mensagem DM personalizada, sedutora e persuasiva.
@@ -126,7 +193,16 @@ Formato de resposta (JSON):
 
 Gere mensagem única e provocante:`;
 
-      const result = await this.model.generateContent(prompt);
+      logger.geminiApiCall('generatePersonalizedDM', prompt, {
+        userId: user.telegram_id,
+        userName,
+        campaignType,
+        userStatus: user.status
+      });
+
+      const result = await this.executeWithRetry(async () => {
+        return await this.model.generateContent(prompt);
+      }, 'generatePersonalizedDM');
       const response = await result.response;
       const text = response.text();
       
@@ -145,15 +221,37 @@ Gere mensagem única e provocante:`;
         timestamp: new Date().toISOString()
       });
       
-      return {
+      const finalContent = {
         ...content,
         generatedAt: new Date().toISOString(),
         type: 'dm_message',
         userId: user.telegram_id
       };
       
+      // Salva no cache (sem o nome personalizado para reutilização)
+      const cacheableContent = {
+        ...content,
+        campaignType,
+        generatedAt: new Date().toISOString(),
+        type: 'dm_message'
+      };
+      await geminiCache.set('generatePersonalizedDM', cacheParams, cacheableContent);
+      
+      const duration = Date.now() - startTime;
+      logger.performance('generatePersonalizedDM', duration, {
+        userId: user.telegram_id,
+        campaignType,
+        contentLength: JSON.stringify(content).length
+      });
+      
+      return finalContent;
+      
     } catch (error) {
-      console.error('Erro ao gerar DM personalizada:', error);
+      logger.geminiApiFallback('generatePersonalizedDM', error.message, {
+        userId: user.telegram_id,
+        campaignType,
+        duration: Date.now() - startTime
+      });
       
       // Fallback
       return this.getFallbackDMContent(user);
@@ -163,48 +261,103 @@ Gere mensagem única e provocante:`;
   /**
    * Gera bio/descrição atraente
    * @param {string} purpose - Propósito da bio
+   * @param {string} platform - Plataforma de destino
+   * @param {string} style - Estilo da bio
    * @returns {Object} Bio gerada
    */
-  async generateAttractiveBio(purpose = 'perfil premium') {
+  async generateAttractiveBio(purpose = 'perfil premium', platform = 'telegram', style = 'seductive') {
+    const startTime = Date.now();
+    const cacheParams = { purpose, platform, style };
+    
     try {
+      // Verifica cache primeiro
+      const cachedContent = await geminiCache.get('generateAttractiveBio', cacheParams);
+      if (cachedContent) {
+        logger.performance('generateAttractiveBio_cache_hit', Date.now() - startTime, {
+          purpose,
+          platform,
+          style,
+          cacheSource: cachedContent.cacheSource
+        });
+        return cachedContent;
+      }
+      
       const prompt = `
-Gere uma bio/descrição super atraente e chamativa para ${purpose}.
+Crie uma biografia atrativa e provocante para perfil de criadora de conteúdo adulto.
 
-Requisitos:
-1. Máximo 150 caracteres
-2. Tom sexy e misterioso
-3. Emojis estratégicos
-4. Desperte curiosidade
-5. Seja única e criativa
+Propósito: ${purpose}
+Plataforma: ${platform}
+Estilo: ${style}
 
-Formato JSON:
+Diretrizes:
+- Tom sedutor e misterioso
+- Use emojis estratégicos
+- Crie curiosidade
+- Inclua call-to-action sutil
+- Máximo 150 caracteres para ${platform}
+- Foque em exclusividade
+- Adapte ao estilo ${style}
+
+Formato de resposta JSON:
 {
-  "bio": "bio aqui",
-  "mood": "humor/tom da bio"
+  "bio": "biografia completa",
+  "mood": "descrição do tom",
+  "appeal": "principal atrativo"
 }
 
 Gere bio única:`;
 
-      const result = await this.model.generateContent(prompt);
+      logger.geminiApiCall('generateAttractiveBio', prompt, {
+        purpose,
+        platform,
+        style,
+        promptLength: prompt.length
+      });
+
+      const result = await this.executeWithRetry(async () => {
+        return await this.model.generateContent(prompt);
+      }, 'generateAttractiveBio');
       const response = await result.response;
       const text = response.text();
       
+      // Parse do JSON
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        throw new Error('Formato de resposta inválido');
+        throw new Error('Resposta não contém JSON válido');
       }
       
       const content = JSON.parse(jsonMatch[0]);
       
-      return {
+      const finalContent = {
         ...content,
+        purpose,
+        platform,
+        style,
         generatedAt: new Date().toISOString(),
         type: 'bio'
       };
       
+      // Salva no cache
+      await geminiCache.set('generateAttractiveBio', cacheParams, finalContent);
+      
+      const duration = Date.now() - startTime;
+      logger.performance('generateAttractiveBio', duration, {
+        purpose,
+        platform,
+        style,
+        contentLength: JSON.stringify(content).length
+      });
+      
+      return finalContent;
+      
     } catch (error) {
-      console.error('Erro ao gerar bio:', error);
-      return this.getFallbackBio();
+      logger.geminiApiFallback('generateAttractiveBio', error.message, {
+        purpose,
+        platform,
+        style,
+        duration: Date.now() - startTime
+      });
+      return this.getFallbackBio(platform, style);
     }
   }
 
@@ -215,7 +368,21 @@ Gere bio única:`;
    * @returns {Object} Conteúdo da campanha
    */
   async generateCampaignContent(campaignName, params = {}) {
+    const startTime = Date.now();
+    const cacheParams = { campaignName, params };
+    
     try {
+      // Verifica cache primeiro
+      const cachedContent = await geminiCache.get('generateCampaignContent', cacheParams);
+      if (cachedContent) {
+        logger.performance('generateCampaignContent_cache_hit', Date.now() - startTime, {
+          campaignName,
+          paramsCount: Object.keys(params).length,
+          cacheSource: cachedContent.cacheSource
+        });
+        return cachedContent;
+      }
+      
       const prompt = `
 Gere conteúdo completo para a campanha "${campaignName}".
 
@@ -241,7 +408,15 @@ Formato JSON:
 
 Gere conteúdo criativo:`;
 
-      const result = await this.model.generateContent(prompt);
+      logger.geminiApiCall('generateCampaignContent', prompt, {
+        campaignName,
+        paramsCount: Object.keys(params).length,
+        promptLength: prompt.length
+      });
+
+      const result = await this.executeWithRetry(async () => {
+        return await this.model.generateContent(prompt);
+      }, 'generateCampaignContent');
       const response = await result.response;
       const text = response.text();
       
@@ -259,15 +434,30 @@ Gere conteúdo criativo:`;
         timestamp: new Date().toISOString()
       });
       
-      return {
+      const finalContent = {
         ...content,
         generatedAt: new Date().toISOString(),
         type: 'campaign',
         name: campaignName
       };
       
+      // Salva no cache
+      await geminiCache.set('generateCampaignContent', cacheParams, finalContent);
+      
+      const duration = Date.now() - startTime;
+      logger.performance('generateCampaignContent', duration, {
+        campaignName,
+        paramsCount: Object.keys(params).length,
+        contentLength: JSON.stringify(content).length
+      });
+      
+      return finalContent;
+      
     } catch (error) {
-      console.error('Erro ao gerar campanha:', error);
+      logger.geminiApiFallback('generateCampaignContent', error.message, {
+        campaignName,
+        duration: Date.now() - startTime
+      });
       return this.getFallbackCampaign(campaignName);
     }
   }
@@ -287,57 +477,285 @@ Gere conteúdo criativo:`;
     }
   }
   
-  getFallbackGroupContent() {
-    const fallbacks = [
+  getFallbackGroupContent(theme = 'assinatura premium', targetAudience = 'adultos') {
+    const currentHour = new Date().getHours();
+    const dayOfWeek = new Date().getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    
+    // Conteúdo baseado no horário
+    const timeBasedContent = {
+      morning: [
+        {
+          title: "🌅 Bom Dia Premium +18!",
+          description: "☀️ Comece o dia com conteúdo adulto exclusivo! Acesso VIP disponível! 🔥💋",
+          callToAction: "📩 Chame agora para despertar seus sentidos!",
+          hashtags: ["#BomDia18", "#Premium", "#ConteudoMatinal"]
+        },
+        {
+          title: "☕ Manhã Sensual Premium!",
+          description: "🌞 Café da manhã especial com conteúdo adulto provocante! Experiência única! 💎🔞",
+          callToAction: "💬 DM para acesso matinal exclusivo!",
+          hashtags: ["#ManhaSensual", "#Premium18", "#AssinaturaVIP"]
+        }
+      ],
+      afternoon: [
+        {
+          title: "🌤️ Tarde Quente Premium +18!",
+          description: "⏰ Pausa especial com conteúdo adulto provocante! Esquente sua tarde! 🔥💋",
+          callToAction: "📩 Chame para uma tarde inesquecível!",
+          hashtags: ["#TardeQuente", "#Premium18", "#ConteudoExclusivo"]
+        },
+        {
+          title: "🌆 Afternoon Premium Sensual!",
+          description: "💫 Tarde perfeita para conteúdo adulto exclusivo! Prazer garantido! 🔞💎",
+          callToAction: "💬 DM para acesso VIP da tarde!",
+          hashtags: ["#TardeSensual", "#Premium", "#AssinaturaVIP"]
+        }
+      ],
+      evening: [
+        {
+          title: "🌙 Noite Íntima Premium +18!",
+          description: "🌃 Termine o dia com conteúdo adulto sedutor! Noite especial te aguarda! 💋🔥",
+          callToAction: "📩 Chame para uma noite provocante!",
+          hashtags: ["#NoiteIntima", "#Premium18", "#ConteudoNoturno"]
+        },
+        {
+          title: "✨ Evening Premium Sensual!",
+          description: "🌟 Noite perfeita para experiências adultas únicas! Acesso VIP disponível! 🔞💎",
+          callToAction: "💬 DM para noite inesquecível!",
+          hashtags: ["#NoiteSensual", "#Premium", "#AssinaturaVIP"]
+        }
+      ]
+    };
+    
+    // Conteúdo especial para fim de semana
+    const weekendContent = [
       {
-        title: "🔥 Conteúdo Adulto Exclusivo +18!",
-        description: "💋 Acesso VIP a conteúdos íntimos e provocantes. Experiência única para adultos! 🔞💎",
-        callToAction: "📩 Chame no privado para acesso exclusivo!",
-        hashtags: ["#ConteudoExclusivo", "#Premium18", "#AssinaturaVIP"]
+        title: "🎉 Weekend Premium +18!",
+        description: "🏖️ Fim de semana especial com conteúdo adulto exclusivo! Desconto VIP! 💸🔥",
+        callToAction: "📩 Aproveite a oferta de weekend!",
+        hashtags: ["#WeekendPremium", "#Desconto18", "#OfertaVIP"]
       },
       {
-        title: "💎 Assinatura Premium +18 Liberada!",
-        description: "🌟 Conteúdo adulto personalizado e sedutor só para você. Prazer garantido! 🔥💋",
-        callToAction: "💬 Mande DM para acesso imediato!",
-        hashtags: ["#ConteudoExclusivo", "#Premium18", "#AssinaturaVIP"]
+        title: "🥳 Final de Semana Sensual!",
+        description: "🎊 Weekend perfeito para conteúdo adulto provocante! Acesso premium liberado! 💋🔞",
+        callToAction: "💬 DM para weekend inesquecível!",
+        hashtags: ["#WeekendSensual", "#Premium18", "#FinalDeSemana"]
       }
     ];
     
-    const random = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+    let selectedContent;
+    
+    // Prioriza conteúdo de fim de semana
+    if (isWeekend && Math.random() < 0.4) {
+      selectedContent = weekendContent;
+    } else {
+      // Seleciona baseado no horário
+      if (currentHour >= 6 && currentHour < 12) {
+        selectedContent = timeBasedContent.morning;
+      } else if (currentHour >= 12 && currentHour < 18) {
+        selectedContent = timeBasedContent.afternoon;
+      } else {
+        selectedContent = timeBasedContent.evening;
+      }
+    }
+    
+    const random = selectedContent[Math.floor(Math.random() * selectedContent.length)];
+    
+    console.log(`📋 Usando fallback dinâmico: tema=${theme}, público=${targetAudience}, horário=${currentHour}h, weekend=${isWeekend}`);
+    
     return {
       ...random,
       generatedAt: new Date().toISOString(),
       type: 'group_post',
-      fallback: true
+      fallback: true,
+      timeContext: {
+        hour: currentHour,
+        isWeekend: isWeekend,
+        theme: theme,
+        audience: targetAudience
+      }
     };
   }
   
-  getFallbackDMContent(user) {
+  getFallbackDMContent(user, campaignType = 'subscription') {
     const userName = user.first_name || user.username || 'querido(a)';
+    const currentHour = new Date().getHours();
+    const dayOfWeek = new Date().getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    
+    // Templates baseados no tipo de campanha
+    const campaignTemplates = {
+      subscription: {
+        morning: [
+          `Bom dia ${userName}! ☀️ Que tal começar o dia com conteúdo premium exclusivo? Acesso VIP disponível! 💎🔥`,
+          `Oi ${userName}! 🌅 Manhã perfeita para descobrir nossa assinatura premium! Conteúdo adulto único! 💋✨`
+        ],
+        afternoon: [
+          `Oi ${userName}! 🌤️ Pausa especial com nossa assinatura premium! Conteúdo provocante te aguarda! 🔥💎`,
+          `${userName}, que tal uma tarde especial? Assinatura VIP com conteúdo exclusivo! 💋🌟`
+        ],
+        evening: [
+          `Boa noite ${userName}! 🌙 Termine o dia com nossa assinatura premium! Conteúdo íntimo disponível! 💋🔥`,
+          `${userName}, noite perfeita para conteúdo adulto exclusivo! Assinatura VIP liberada! 🌟💎`
+        ]
+      },
+      promotion: {
+        morning: [
+          `${userName}! 🎉 Promoção matinal especial! Desconto na assinatura premium! Aproveite! 💸🔥`,
+          `Bom dia ${userName}! ☀️ Oferta única: 50% OFF na assinatura premium! Conteúdo adulto exclusivo! 💋💎`
+        ],
+        afternoon: [
+          `${userName}! 🚨 Promoção relâmpago! Assinatura premium com desconto! Últimas vagas! 💸⚡`,
+          `Oi ${userName}! 🎯 Oferta especial da tarde! Acesso VIP com preço promocional! 🔥💎`
+        ],
+        evening: [
+          `${userName}! 🌙 Última chance! Promoção noturna da assinatura premium! Não perca! 💸🔥`,
+          `Boa noite ${userName}! ✨ Oferta especial: assinatura VIP com desconto! Conteúdo exclusivo! 💋💎`
+        ]
+      },
+      retention: [
+        `${userName}, sentimos sua falta! 💔 Que tal voltar com nossa assinatura premium? Conteúdo novo te aguarda! 🔥💎`,
+        `Oi ${userName}! 🌟 Oferta especial de retorno! Assinatura premium com benefícios únicos! 💋✨`,
+        `${userName}, volta para nós! 💫 Assinatura VIP com conteúdo ainda mais provocante! 🔥💎`
+      ]
+    };
+    
+    // Templates especiais para fim de semana
+    const weekendTemplates = [
+      `${userName}! 🎉 Weekend especial! Assinatura premium com desconto de fim de semana! 💸🔥`,
+      `Oi ${userName}! 🏖️ Final de semana perfeito para conteúdo premium! Oferta VIP disponível! 💋💎`,
+      `${userName}! 🥳 Weekend sensual! Assinatura premium liberada com preço especial! 🔥✨`
+    ];
+    
+    let selectedTemplates;
+    
+    // Prioriza templates de fim de semana
+    if (isWeekend && Math.random() < 0.3) {
+      selectedTemplates = weekendTemplates;
+    } else if (campaignType === 'retention') {
+      selectedTemplates = campaignTemplates.retention;
+    } else {
+      const timeOfDay = currentHour >= 6 && currentHour < 12 ? 'morning' :
+                       currentHour >= 12 && currentHour < 18 ? 'afternoon' : 'evening';
+      
+      selectedTemplates = campaignTemplates[campaignType]?.[timeOfDay] || campaignTemplates.subscription[timeOfDay];
+    }
+    
+    const randomTemplate = selectedTemplates[Math.floor(Math.random() * selectedTemplates.length)];
+    
+    console.log(`📩 Usando DM fallback: usuário=${userName}, campanha=${campaignType}, horário=${currentHour}h, weekend=${isWeekend}`);
+    
     return {
-      message: `Oi ${userName}! 💋 Vi que você tem interesse em conteúdo adulto exclusivo. Tenho algo muito especial e provocante só para você! 🔥🔞`,
+      message: randomTemplate,
       offer: "Acesso VIP premium +18 com desconto exclusivo",
       urgency: "Oferta sensual válida por tempo limitado!",
       generatedAt: new Date().toISOString(),
       type: 'dm_message',
-      fallback: true
+      fallback: true,
+      context: {
+        userName,
+        campaignType,
+        hour: currentHour,
+        isWeekend,
+        timeOfDay: currentHour >= 6 && currentHour < 12 ? 'morning' :
+                  currentHour >= 12 && currentHour < 18 ? 'afternoon' : 'evening'
+      }
     };
   }
   
-  getFallbackBio() {
-    const bios = [
-      "🔞 Conteúdo adulto exclusivo e provocante 🔥 Acesso VIP +18 disponível 💎",
-      "💋 Experiências íntimas únicas te esperando 💫 Venha se deliciar! 🔥",
-      "💎 Premium adult content creator 🔞 Seu prazer vai mudar! 🌟💋"
+  getFallbackBio(platform = 'telegram', style = 'seductive') {
+    const currentHour = new Date().getHours();
+    const dayOfWeek = new Date().getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    
+    // Templates baseados no estilo
+    const styleTemplates = {
+      seductive: {
+        short: [
+          "🔥 Conteúdo adulto exclusivo | 💎 Acesso VIP | 🌟 +18 apenas",
+          "💋 Experiência premium sensual | 🔞 Material íntimo | ✨ Assinatura VIP",
+          "🌟 Criadora +18 | 💎 Conteúdo exclusivo | 🔥 Acesso premium"
+        ],
+        medium: [
+          "🔥 Criadora de conteúdo adulto exclusivo 💎\n🌟 Experiência premium personalizada\n💋 Acesso VIP disponível | +18 apenas",
+          "💫 Conteúdo íntimo e provocante 🔞\n🔥 Material exclusivo premium\n💎 Assinatura VIP | Experiência única",
+          "🌟 Conteúdo adulto de alta qualidade 💋\n🔥 Acesso exclusivo premium\n💎 Experiência sensual personalizada"
+        ],
+        long: [
+          "🔥 Criadora de conteúdo adulto premium 💎\n🌟 Experiência sensual personalizada\n💋 Material íntimo exclusivo\n🔞 Acesso VIP disponível\n✨ Assinatura com benefícios únicos",
+          "💫 Conteúdo adulto de alta qualidade 🔥\n🌟 Experiência premium personalizada\n💎 Material exclusivo e provocante\n💋 Acesso VIP liberado\n🔞 Assinatura com desconto especial"
+        ]
+      },
+      professional: {
+        short: [
+          "📸 Content Creator | 💎 Premium Access | 🔞 Adult Content",
+          "🌟 Digital Creator | 🔥 Exclusive Material | 💋 VIP Subscription",
+          "💎 Premium Creator | 🔞 Adult Content | ✨ Exclusive Access"
+        ],
+        medium: [
+          "📸 Professional Content Creator 💎\n🔞 Premium Adult Material\n🌟 VIP Access Available | Exclusive Content",
+          "💫 Digital Content Creator 🔥\n🔞 High-Quality Adult Content\n💎 Premium Subscription | Exclusive Access"
+        ],
+        long: [
+          "📸 Professional Adult Content Creator 💎\n🌟 Premium Digital Experience\n🔞 High-Quality Exclusive Material\n💋 VIP Subscription Available\n✨ Personalized Content & Benefits"
+        ]
+      },
+      playful: {
+        short: [
+          "😈 Travessa digital | 🔥 Conteúdo picante | 💎 Acesso VIP",
+          "🥵 Criadora safadinha | 💋 Material quente | 🌟 Premium +18",
+          "😏 Conteúdo provocante | 🔥 Experiência única | 💎 VIP access"
+        ],
+        medium: [
+          "😈 Sua criadora favorita 🔥\n🥵 Conteúdo picante e exclusivo\n💎 Acesso VIP | Material provocante +18",
+          "😏 Travessa digital premium 💋\n🔥 Conteúdo quente e personalizado\n🌟 Assinatura VIP | Experiência única"
+        ],
+        long: [
+          "😈 Sua criadora safadinha favorita 🔥\n🥵 Conteúdo picante e exclusivo\n💋 Material provocante personalizado\n🌟 Acesso VIP premium\n💎 Experiência única e inesquecível"
+        ]
+      }
+    };
+    
+    // Templates especiais para fim de semana
+    const weekendTemplates = [
+      "🎉 Weekend especial! 🔥 Conteúdo premium | 💎 Oferta VIP | 🌟 +18",
+      "🏖️ Final de semana sensual | 💋 Material exclusivo | 🔥 Acesso premium",
+      "🥳 Weekend provocante | 🔞 Conteúdo VIP | 💎 Experiência única"
     ];
     
-    const random = bios[Math.floor(Math.random() * bios.length)];
+    // Determina o tamanho da bio baseado na plataforma
+    const bioSize = platform === 'instagram' ? 'short' : 
+                   platform === 'twitter' ? 'short' :
+                   platform === 'telegram' ? (Math.random() < 0.5 ? 'medium' : 'short') :
+                   'medium';
+    
+    let selectedTemplate;
+    
+    // Prioriza templates de fim de semana
+    if (isWeekend && Math.random() < 0.2) {
+      selectedTemplate = weekendTemplates[Math.floor(Math.random() * weekendTemplates.length)];
+    } else {
+      const templates = styleTemplates[style]?.[bioSize] || styleTemplates.seductive[bioSize];
+      selectedTemplate = templates[Math.floor(Math.random() * templates.length)];
+    }
+    
+    console.log(`📝 Usando bio fallback: plataforma=${platform}, estilo=${style}, tamanho=${bioSize}, weekend=${isWeekend}`);
+    
     return {
-      bio: random,
+      bio: selectedTemplate,
       mood: "misterioso e atraente",
       generatedAt: new Date().toISOString(),
       type: 'bio',
-      fallback: true
+      fallback: true,
+      context: {
+        platform,
+        style,
+        bioSize,
+        hour: currentHour,
+        isWeekend,
+        characterCount: selectedTemplate.length
+      }
     };
   }
   
@@ -370,7 +788,10 @@ Gere um conteúdo ${type} sobre "${topic}" com estilo ${style}.
 O conteúdo deve ser atrativo, profissional e adequado para marketing digital.
 Responda apenas com o texto do conteúdo, sem explicações adicionais.`;
       
-      const result = await this.model.generateContent(prompt);
+      const result = await this.executeWithRetry(async () => {
+        return await this.model.generateContent(prompt);
+      });
+      
       const response = await result.response;
       const text = response.text();
       
@@ -403,18 +824,107 @@ Responda apenas com o texto do conteúdo, sem explicações adicionais.`;
   }
 
   /**
+   * Executa uma operação com retry e backoff exponencial
+   * @param {Function} operation - Função a ser executada
+   * @param {string} operationName - Nome da operação para logs
+   * @param {number} maxRetries - Número máximo de tentativas
+   * @param {number} baseDelay - Delay base em ms
+   * @returns {Promise} Resultado da operação
+   */
+  async executeWithRetry(operation, operationName = 'unknown', maxRetries = 3, baseDelay = 1000) {
+    const startTime = Date.now();
+    let lastError;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const operationStartTime = Date.now();
+        const result = await operation();
+        const operationDuration = Date.now() - operationStartTime;
+        const totalDuration = Date.now() - startTime;
+        
+        logger.geminiApiSuccess(operationName, result?.length || 0, operationDuration, {
+          attempt: attempt + 1,
+          totalDuration,
+          maxRetries: maxRetries + 1
+        });
+        
+        if (attempt > 0) {
+          logger.performance(`${operationName}_retry_success`, totalDuration, {
+            attempts: attempt + 1,
+            finalAttempt: attempt + 1
+          });
+        }
+        
+        return result;
+      } catch (error) {
+        lastError = error;
+        
+        const isRetryableError = error.status === 503 || error.status === 429;
+        const isLastAttempt = attempt === maxRetries;
+        
+        logger.geminiApiError(operationName, error, attempt + 1, maxRetries + 1, {
+          isRetryableError,
+          isLastAttempt,
+          totalDuration: Date.now() - startTime
+        });
+        
+        // Se não é erro 503 ou 429, não tenta novamente
+        if (!isRetryableError) {
+          logger.error(`Erro não recuperável na operação Gemini: ${operationName}`, error, {
+            attempt: attempt + 1,
+            totalDuration: Date.now() - startTime
+          });
+          throw error;
+        }
+        
+        // Se é a última tentativa, lança o erro
+        if (isLastAttempt) {
+          logger.error(`Falha definitiva na operação Gemini: ${operationName}`, error, {
+            totalAttempts: attempt + 1,
+            totalDuration: Date.now() - startTime
+          });
+          throw error;
+        }
+        
+        // Calcula delay com backoff exponencial + jitter
+        const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+        
+        logger.info(`Aguardando retry para ${operationName}`, {
+          attempt: attempt + 1,
+          delay: Math.round(delay),
+          nextAttempt: attempt + 2,
+          maxRetries: maxRetries + 1
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    throw lastError;
+  }
+
+  /**
    * Testa a conexão com Gemini AI
    * @returns {boolean} Status da conexão
    */
   async testConnection() {
     try {
-      const result = await this.model.generateContent('Teste de conexão. Responda apenas: OK');
+      logger.geminiApiCall('testConnection', 'Teste de conexão. Responda apenas: OK', { purpose: 'connection_test' });
+      
+      const result = await this.executeWithRetry(async () => {
+        return await this.model.generateContent('Teste de conexão. Responda apenas: OK');
+      }, 'testConnection', 2, 500); // 2 tentativas com delay menor para teste
+      
       const response = await result.response;
       const text = response.text();
       
+      logger.info('Conexão Gemini AI estabelecida com sucesso');
       return text.includes('OK');
     } catch (error) {
-      console.error('Erro no teste de conexão Gemini:', error);
+      logger.error('Erro no teste de conexão Gemini', error, {
+        operation: 'testConnection',
+        critical: true
+      });
       return false;
     }
   }

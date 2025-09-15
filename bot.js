@@ -7,6 +7,7 @@ const GroupManager = require('./services/groupManager');
 const BackupManager = require('./services/backupManager');
 const AutoPostManager = require('./services/autoPostManager');
 const GeminiAIService = require('./services/geminiAI');
+const IdentifierResolver = require('./utils/identifierResolver');
 require('dotenv').config();
 
 // Configuração do momento para português
@@ -42,6 +43,7 @@ class TelegramSubscriptionBot {
     this.backupManager = new BackupManager();
     this.autoPostManager = new AutoPostManager(this.bot);
     this.geminiAI = new GeminiAIService();
+    this.identifierResolver = new IdentifierResolver(this.bot);
     
     this.setupHandlers();
     
@@ -91,13 +93,15 @@ class TelegramSubscriptionBot {
     this.bot.onText(/\/reenviar (.+)/, (msg, match) => this.handleReenviar(msg, match));
     this.bot.onText(/\/stats/, (msg) => this.handleStats(msg));
     
-    // Novos comandos administrativos
+    // Novos comandos administrativos com suporte a @ e links
     this.bot.onText(/\/grupos/, (msg) => this.handleGroups(msg));
     this.bot.onText(/\/scrape (.+)/, (msg, match) => this.handleStartScraping(msg, match));
-    this.bot.onText(/\/addgrupo/, (msg) => this.handleAddGroup(msg));
+    this.bot.onText(/\/addgrupo (.+) (.+)/, (msg, match) => this.handleAddGroupWithIdentifier(msg, match));
     this.bot.onText(/\/membros (.+)/, (msg, match) => this.handleGroupMembers(msg, match));
     this.bot.onText(/\/replicar (.+) (.+)/, (msg, match) => this.handleReplicateMembers(msg, match));
     this.bot.onText(/\/autoadd (.+) (.+)/, (msg, match) => this.handleAutoAdd(msg, match));
+    this.bot.onText(/\/usuario (.+)/, (msg, match) => this.handleUserInfo(msg, match));
+    this.bot.onText(/\/grupo (.+)/, (msg, match) => this.handleGroupInfo(msg, match));
     this.bot.onText(/\/bulkadd (.+)/, (msg, match) => this.handleBulkAdd(msg, match));
     this.bot.onText(/\/jobs/, (msg) => this.handleScrapingJobs(msg));
     this.bot.onText(/\/logs/, (msg) => this.handleLogs(msg));
@@ -332,6 +336,14 @@ ${this.getSubscriptionStatusMessage(dbUser)}
           await this.handleUnsubscribeDM(callbackQuery);
           break;
           
+        case 'subscription':
+          await this.handleSubscription(chatId, userId);
+          break;
+          
+        case 'subscribe_now':
+          await this.handleSubscription(chatId, userId);
+          break;
+          
         // Novos botões para conteúdo adulto +18
         case 'acesso_exclusivo':
           await this.handleAcessoExclusivo(chatId, userId);
@@ -412,8 +424,24 @@ ${this.getSubscriptionStatusMessage(dbUser)}
           await this.handleGroups({ chat: { id: chatId }, from: { id: userId } });
           break;
           
+        case 'grupos_membros':
+          await this.bot.sendMessage(chatId, '👥 Para ver membros de um grupo, use: `/members <grupo_id>`\n\nPrimeiro liste os grupos para ver os IDs disponíveis.', { parse_mode: 'Markdown' });
+          break;
+          
         case 'grupos_scraping':
           await this.bot.sendMessage(chatId, '🔍 Para iniciar scraping, use: `/scrape <grupo_id>`\n\nPrimeiro liste os grupos para ver os IDs disponíveis.', { parse_mode: 'Markdown' });
+          break;
+          
+        case 'grupos_add_user':
+          await this.bot.sendMessage(chatId, '➕ Para adicionar usuário, use: `/autoadd <grupo_id> <user_id>`\n\nExemplo: `/autoadd 123456789 987654321`', { parse_mode: 'Markdown' });
+          break;
+          
+        case 'grupos_bulk_add':
+          await this.bot.sendMessage(chatId, '📦 Para adição em massa, use: `/bulkadd <grupo_origem> <grupo_destino> <quantidade>`\n\nExemplo: `/bulkadd 123456789 987654321 50`', { parse_mode: 'Markdown' });
+          break;
+          
+        case 'grupos_replicar':
+          await this.bot.sendMessage(chatId, '🔄 Para replicar membros, use: `/replicate <grupo_origem> <grupo_destino>`\n\nExemplo: `/replicate @grupo1 @grupo2`', { parse_mode: 'Markdown' });
           break;
           
         case 'grupos_jobs':
@@ -450,6 +478,18 @@ ${this.getSubscriptionStatusMessage(dbUser)}
           await this.handleSystemInfo({ chat: { id: chatId }, from: { id: userId } });
           break;
           
+        case 'sistema_stats':
+          await this.handleAdvancedStats({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'sistema_logs':
+          await this.handleLogs({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'sistema_status':
+          await this.handleAutoPost({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
         // Callbacks específicos - Usuários
         case 'users_listar':
           await this.handleUsers({ chat: { id: chatId }, from: { id: userId } });
@@ -463,9 +503,17 @@ ${this.getSubscriptionStatusMessage(dbUser)}
           await this.bot.sendMessage(chatId, '✅ Para desbanir um usuário, use: `/unban <user_id>`', { parse_mode: 'Markdown' });
           break;
           
+        case 'users_buscar':
+          await this.bot.sendMessage(chatId, '🔍 Para buscar um usuário, use: `/userinfo <user_id>`\n\nExemplo: `/userinfo 123456789`', { parse_mode: 'Markdown' });
+          break;
+          
         // Callbacks específicos - Backup
         case 'backup_criar':
           await this.handleBackup({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'backup_listar':
+          await this.bot.sendMessage(chatId, '📋 **Backups Disponíveis**\n\nUse `/backup` para ver a lista completa de backups disponíveis.', { parse_mode: 'Markdown' });
           break;
           
         case 'backup_restaurar':
@@ -487,6 +535,10 @@ ${this.getSubscriptionStatusMessage(dbUser)}
           
         case 'autopost_stop':
           await this.handleStopAuto({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'autopost_toggle':
+          await this.bot.sendMessage(chatId, '🔄 Para alternar auto-post em um grupo, use: `/toggle <grupo_id>`\n\nExemplo: `/toggle 123456789`', { parse_mode: 'Markdown' });
           break;
           
         case 'autopost_test_ai':
@@ -512,7 +564,8 @@ ${this.getSubscriptionStatusMessage(dbUser)}
           break;
           
         default:
-          await this.bot.sendMessage(chatId, '❌ Ação não reconhecida.');
+          console.log(`❓ Callback não reconhecido: ${data}`);
+          await this.bot.sendMessage(chatId, `⚠️ Função "${data}" ainda não implementada.\n\nEm breve estará disponível!`, { parse_mode: 'Markdown' });
       }
     } catch (error) {
       console.error('❌ Erro no callback query:', error.message);
@@ -1227,13 +1280,133 @@ Segunda a Sexta: 9h às 18h`;
     }
   }
 
-  async handleAddGroup(msg) {
+  async handleAddGroupWithIdentifier(msg, match) {
     if (!this.isAdmin(msg.from.id)) {
       await this.bot.sendMessage(msg.chat.id, '❌ Acesso negado.');
       return;
     }
     
-    await this.bot.sendMessage(msg.chat.id, 'Para adicionar um grupo, use:\n`/addgrupo <telegram_id> <nome>`', { parse_mode: 'Markdown' });
+    try {
+      const identifier = match[1];
+      const groupName = match[2];
+      
+      // Valida o identificador
+      if (!this.identifierResolver.isValidIdentifier(identifier, 'group')) {
+        await this.bot.sendMessage(msg.chat.id, '❌ Identificador inválido. Use:\n• @nomegrupo\n• https://t.me/nomegrupo\n• ID numérico');
+        return;
+      }
+      
+      await this.bot.sendMessage(msg.chat.id, '🔄 Resolvendo identificador do grupo...');
+      
+      const groupInfo = await this.identifierResolver.resolveGroup(identifier);
+      
+      if (!groupInfo) {
+        await this.bot.sendMessage(msg.chat.id, '❌ Grupo não encontrado ou não acessível.');
+        return;
+      }
+      
+      // Adiciona o grupo ao banco de dados
+      const result = await this.groupManager.addGroup(groupInfo.id, groupName, groupInfo.username);
+      
+      if (result.success) {
+        const formattedInfo = this.identifierResolver.formatIdentifier(groupInfo);
+        await this.bot.sendMessage(msg.chat.id, 
+          `✅ Grupo adicionado com sucesso!\n\n` +
+          `📋 **Informações:**\n` +
+          `• Nome: ${groupName}\n` +
+          `• Grupo: ${formattedInfo}\n` +
+          `• Membros: ${groupInfo.member_count}\n` +
+          `• Tipo: ${groupInfo.type}`, 
+          { parse_mode: 'Markdown' }
+        );
+      } else {
+        await this.bot.sendMessage(msg.chat.id, `❌ Erro ao adicionar grupo: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao adicionar grupo:', error.message);
+      await this.bot.sendMessage(msg.chat.id, '❌ Erro interno ao adicionar grupo.');
+    }
+  }
+
+  async handleUserInfo(msg, match) {
+    if (!this.isAdmin(msg.from.id)) {
+      await this.bot.sendMessage(msg.chat.id, '❌ Acesso negado.');
+      return;
+    }
+    
+    try {
+      const identifier = match[1];
+      
+      if (!this.identifierResolver.isValidIdentifier(identifier, 'user')) {
+        await this.bot.sendMessage(msg.chat.id, '❌ Identificador de usuário inválido. Use:\n• @username\n• ID numérico');
+        return;
+      }
+      
+      await this.bot.sendMessage(msg.chat.id, '🔄 Buscando informações do usuário...');
+      
+      const userInfo = await this.identifierResolver.resolveUser(identifier);
+      
+      if (!userInfo) {
+        await this.bot.sendMessage(msg.chat.id, '❌ Usuário não encontrado ou não acessível.');
+        return;
+      }
+      
+      const formattedInfo = this.identifierResolver.formatIdentifier(userInfo);
+      
+      await this.bot.sendMessage(msg.chat.id, 
+        `👤 **Informações do Usuário:**\n\n` +
+        `• ${formattedInfo}\n` +
+        `• ID: \`${userInfo.id}\`\n` +
+        `• Username: ${userInfo.username ? `@${userInfo.username}` : 'Não definido'}\n` +
+        `• Nome: ${userInfo.first_name || 'Não definido'}\n` +
+        `• Sobrenome: ${userInfo.last_name || 'Não definido'}`, 
+        { parse_mode: 'Markdown' }
+      );
+    } catch (error) {
+      console.error('❌ Erro ao buscar usuário:', error.message);
+      await this.bot.sendMessage(msg.chat.id, '❌ Erro interno ao buscar usuário.');
+    }
+  }
+
+  async handleGroupInfo(msg, match) {
+    if (!this.isAdmin(msg.from.id)) {
+      await this.bot.sendMessage(msg.chat.id, '❌ Acesso negado.');
+      return;
+    }
+    
+    try {
+      const identifier = match[1];
+      
+      if (!this.identifierResolver.isValidIdentifier(identifier, 'group')) {
+        await this.bot.sendMessage(msg.chat.id, '❌ Identificador de grupo inválido. Use:\n• @nomegrupo\n• https://t.me/nomegrupo\n• ID numérico');
+        return;
+      }
+      
+      await this.bot.sendMessage(msg.chat.id, '🔄 Buscando informações do grupo...');
+      
+      const groupInfo = await this.identifierResolver.resolveGroup(identifier);
+      
+      if (!groupInfo) {
+        await this.bot.sendMessage(msg.chat.id, '❌ Grupo não encontrado ou não acessível.');
+        return;
+      }
+      
+      const formattedInfo = this.identifierResolver.formatIdentifier(groupInfo);
+      
+      await this.bot.sendMessage(msg.chat.id, 
+        `👥 **Informações do Grupo:**\n\n` +
+        `• ${formattedInfo}\n` +
+        `• ID: \`${groupInfo.id}\`\n` +
+        `• Username: ${groupInfo.username ? `@${groupInfo.username}` : 'Não definido'}\n` +
+        `• Título: ${groupInfo.title}\n` +
+        `• Tipo: ${groupInfo.type}\n` +
+        `• Membros: ${groupInfo.member_count}`, 
+        { parse_mode: 'Markdown' }
+      );
+    } catch (error) {
+      console.error('❌ Erro ao buscar grupo:', error.message);
+      await this.bot.sendMessage(msg.chat.id, '❌ Erro interno ao buscar grupo.');
+    }
   }
 
   async handleGroupMembers(msg, match) {
@@ -1243,10 +1416,26 @@ Segunda a Sexta: 9h às 18h`;
     }
     
     try {
-      const groupId = match[1];
-      const members = await this.groupManager.getGroupMembers(groupId);
+      const identifier = match[1];
       
-      let message = `👥 *Membros do Grupo ${groupId}:*\n\n`;
+      if (!this.identifierResolver.isValidIdentifier(identifier, 'group')) {
+        await this.bot.sendMessage(msg.chat.id, '❌ Identificador de grupo inválido. Use:\n• @nomegrupo\n• https://t.me/nomegrupo\n• ID numérico');
+        return;
+      }
+      
+      await this.bot.sendMessage(msg.chat.id, '🔄 Resolvendo grupo e buscando membros...');
+      
+      const groupInfo = await this.identifierResolver.resolveGroup(identifier);
+      
+      if (!groupInfo) {
+        await this.bot.sendMessage(msg.chat.id, '❌ Grupo não encontrado ou não acessível.');
+        return;
+      }
+      
+      const members = await this.groupManager.getGroupMembers(groupInfo.id);
+      const formattedInfo = this.identifierResolver.formatIdentifier(groupInfo);
+      
+      let message = `👥 **Membros do Grupo:**\n${formattedInfo}\n\n`;
       message += `Total: ${members.length} membros\n\n`;
       
       members.slice(0, 20).forEach(member => {
@@ -1271,21 +1460,55 @@ Segunda a Sexta: 9h às 18h`;
     }
     
     try {
-      const sourceGroupId = match[1];
-      const targetGroupId = match[2];
+      const sourceIdentifier = match[1];
+      const targetIdentifier = match[2];
       
-      await this.bot.sendMessage(msg.chat.id, '🔄 Iniciando replicação de membros...');
+      // Valida identificadores
+      if (!this.identifierResolver.isValidIdentifier(sourceIdentifier, 'group') || 
+          !this.identifierResolver.isValidIdentifier(targetIdentifier, 'group')) {
+        await this.bot.sendMessage(msg.chat.id, '❌ Identificadores inválidos. Use:\n• @nomegrupo\n• https://t.me/nomegrupo\n• ID numérico');
+        return;
+      }
       
-      const result = await this.groupManager.replicateMembers(sourceGroupId, targetGroupId);
+      await this.bot.sendMessage(msg.chat.id, '🔄 Resolvendo grupos...');
+      
+      const [sourceGroup, targetGroup] = await Promise.all([
+        this.identifierResolver.resolveGroup(sourceIdentifier),
+        this.identifierResolver.resolveGroup(targetIdentifier)
+      ]);
+      
+      if (!sourceGroup || !targetGroup) {
+        await this.bot.sendMessage(msg.chat.id, '❌ Um ou ambos os grupos não foram encontrados.');
+        return;
+      }
+      
+      const sourceFormatted = this.identifierResolver.formatIdentifier(sourceGroup);
+      const targetFormatted = this.identifierResolver.formatIdentifier(targetGroup);
+      
+      await this.bot.sendMessage(msg.chat.id, 
+        `🔄 Iniciando replicação de membros...\n\n` +
+        `📤 **Origem:** ${sourceFormatted}\n` +
+        `📥 **Destino:** ${targetFormatted}`,
+        { parse_mode: 'Markdown' }
+      );
+      
+      const result = await this.groupManager.replicateMembers(sourceGroup.id, targetGroup.id);
       
       if (result.success) {
-        await this.bot.sendMessage(msg.chat.id, `✅ Replicação concluída: ${result.added} membros adicionados`);
+        await this.bot.sendMessage(msg.chat.id, 
+          `✅ **Replicação concluída!**\n\n` +
+          `📊 **Resultado:**\n` +
+          `• Membros adicionados: ${result.added}\n` +
+          `• Origem: ${sourceFormatted}\n` +
+          `• Destino: ${targetFormatted}`,
+          { parse_mode: 'Markdown' }
+        );
       } else {
-        await this.bot.sendMessage(msg.chat.id, `❌ Erro: ${result.error}`);
+        await this.bot.sendMessage(msg.chat.id, `❌ Erro na replicação: ${result.error}`);
       }
     } catch (error) {
       console.error('❌ Erro na replicação:', error.message);
-      await this.bot.sendMessage(msg.chat.id, '❌ Erro na replicação.');
+      await this.bot.sendMessage(msg.chat.id, '❌ Erro interno na replicação.');
     }
   }
 
