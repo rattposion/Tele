@@ -2528,6 +2528,28 @@ Segunda a Sexta: 9h às 18h`;
       const count = await this.bot.getChatMemberCount(chatId);
       return count;
     } catch (error) {
+      // Tratamento específico para grupos que foram atualizados para supergrupos
+      if (error.message.includes('group chat was upgraded to a supergroup chat')) {
+        console.warn(`⚠️ Grupo ${chatId} foi atualizado para supergrupo. Tentando obter novo ID...`);
+        
+        try {
+          // Tentar obter informações do chat para encontrar o novo ID
+          const chat = await this.bot.getChat(chatId);
+          if (chat && chat.id !== chatId) {
+            console.log(`✅ Novo ID do supergrupo encontrado: ${chat.id}`);
+            // Tentar novamente com o novo ID
+            const count = await this.bot.getChatMemberCount(chat.id);
+            return count;
+          }
+        } catch (retryError) {
+          console.error('❌ Erro ao tentar obter contagem com novo ID:', retryError.message);
+        }
+        
+        console.warn('⚠️ Não foi possível obter contagem de membros do supergrupo. Retornando 0.');
+        return 0;
+      }
+      
+      // Outros tipos de erro
       console.error('❌ Erro ao obter contagem de membros:', error.message);
       return 0;
     }
