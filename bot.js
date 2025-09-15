@@ -213,10 +213,19 @@ ${this.getSubscriptionStatusMessage(dbUser)}
 
   // Retorna mensagem de status da assinatura
   getSubscriptionStatusMessage(user) {
-    if (user.status === 'active') {
+    // Verificação de segurança para evitar erro de propriedade undefined
+    if (!user || typeof user !== 'object') {
+      console.error('❌ Erro: usuário undefined ou inválido em getSubscriptionStatusMessage');
+      return '🔓 *Sem Assinatura Ativa*\nAssine para ter acesso completo';
+    }
+    
+    // Define status padrão se não existir
+    const status = user.status || 'inactive';
+    
+    if (status === 'active') {
       const endDate = moment(user.subscription_end).format('DD/MM/YYYY');
       return `✅ *Assinatura Ativa*\nVálida até: ${endDate}`;
-    } else if (user.status === 'expired') {
+    } else if (status === 'expired') {
       return '⏰ *Assinatura Expirada*\nRenove para continuar acessando';
     } else {
       return '🔓 *Sem Assinatura Ativa*\nAssine para ter acesso completo';
