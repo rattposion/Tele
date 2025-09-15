@@ -151,13 +151,13 @@ class Database {
             VALUES (?, ?, ?, ?)
           `;
           
-          this.db.run(insertSql, [id.toString(), username, first_name, last_name], function(insertErr) {
+          this.db.run(insertSql, [id.toString(), username, first_name, last_name], (insertErr) => {
             if (insertErr) {
               reject(insertErr);
             } else {
               // Busca o usuário recém-criado
               const newUserSql = 'SELECT * FROM users WHERE id = ?';
-              this.get(newUserSql, [this.lastID], (getUserErr, newUser) => {
+              this.db.get(newUserSql, [this.lastID], (getUserErr, newUser) => {
                 if (getUserErr) {
                   reject(getUserErr);
                 } else {

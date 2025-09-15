@@ -20,7 +20,18 @@ class TelegramSubscriptionBot {
       throw new Error('❌ Token do bot Telegram não configurado');
     }
     
-    this.bot = new TelegramBot(this.token, { polling: true });
+    // Usar polling em desenvolvimento local para evitar conflito com Railway
+    const isLocal = process.env.NODE_ENV === 'development' || !process.env.RAILWAY_ENVIRONMENT;
+    
+    if (isLocal) {
+      // Modo polling para desenvolvimento local
+      this.bot = new TelegramBot(this.token, { polling: true });
+      console.log('🔄 Bot configurado em modo polling (local)');
+    } else {
+      // Modo webhook para produção (Railway)
+      this.bot = new TelegramBot(this.token, { webHook: true });
+      console.log('🔄 Bot configurado em modo webhook (produção)');
+    }
     
     // Inicializa serviços após criar o bot
     this.groupManager = new GroupManager(this.bot, database);
