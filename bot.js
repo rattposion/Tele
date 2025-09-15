@@ -149,6 +149,23 @@ class TelegramSubscriptionBot {
       const chatId = msg.chat.id;
       const user = msg.from;
       
+      // Verifica se o comando foi executado em um grupo
+      if (msg.chat.type === 'group' || msg.chat.type === 'supergroup') {
+        const botUsername = this.bot.options.username || process.env.BOT_USERNAME;
+        const privateLink = `https://t.me/${botUsername}?start=grupo`;
+        
+        await this.bot.sendMessage(chatId, 
+          `🤖 Olá ${user.first_name}!\n\n` +
+          `Para usar o bot, você precisa conversar comigo no chat privado.\n\n` +
+          `👆 Clique no link abaixo para iniciar:\n${privateLink}`,
+          {
+            parse_mode: 'Markdown',
+            reply_to_message_id: msg.message_id
+          }
+        );
+        return;
+      }
+      
       console.log(`👤 Usuário ${user.first_name} (${user.id}) iniciou conversa`);
       
       // Busca ou cria usuário no banco
