@@ -123,6 +123,7 @@ class TelegramSubscriptionBot {
     this.bot.on('callback_query', (callbackQuery) => this.handleCallbackQuery(callbackQuery));
     
     // Eventos de grupo para capturar membros
+    this.bot.on('callback_query', (callbackQuery) => this.handleCallbackQuery(callbackQuery));
     this.bot.on('new_chat_members', (msg) => this.handleNewChatMembers(msg));
     this.bot.on('left_chat_member', (msg) => this.handleLeftChatMember(msg));
     this.bot.on('message', (msg) => this.handleMessage(msg));
@@ -203,15 +204,23 @@ ${this.getSubscriptionStatusMessage(dbUser)}
       
       const keyboard = this.getMainKeyboard(dbUser);
       
-      // Envia imagem se configurada
+      // Envia imagem se configurada e válida
       const productImageUrl = process.env.PRODUCT_IMAGE_URL;
       
-      if (productImageUrl) {
-        await this.bot.sendPhoto(chatId, productImageUrl, {
-          caption: welcomeMessage,
-          parse_mode: 'Markdown',
-          reply_markup: keyboard
-        });
+      if (productImageUrl && productImageUrl.trim() && productImageUrl.startsWith('http')) {
+        try {
+          await this.bot.sendPhoto(chatId, productImageUrl, {
+            caption: welcomeMessage,
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+          });
+        } catch (imageError) {
+          console.warn('⚠️ Erro ao enviar imagem, enviando apenas texto:', imageError.message);
+          await this.bot.sendMessage(chatId, welcomeMessage, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+          });
+        }
       } else {
         await this.bot.sendMessage(chatId, welcomeMessage, {
           parse_mode: 'Markdown',
@@ -235,9 +244,14 @@ ${this.getSubscriptionStatusMessage(dbUser)}
     // Define status padrão se não existir
     const status = user.status || 'inactive';
     
-    if (status === 'active') {
-      const endDate = moment(user.subscription_end).format('DD/MM/YYYY');
-      return `✅ *Assinatura Ativa*\nVálida até: ${endDate}`;
+    if (status === 'active' && user.subscription_end) {
+      try {
+        const endDate = moment(user.subscription_end).format('DD/MM/YYYY');
+        return `✅ *Assinatura Ativa*\nVálida até: ${endDate}`;
+      } catch (dateError) {
+        console.warn('⚠️ Erro ao formatar data de expiração:', dateError.message);
+        return '✅ *Assinatura Ativa*\nData de expiração indisponível';
+      }
     } else if (status === 'expired') {
       return '⏰ *Assinatura Expirada*\nRenove para continuar acessando';
     } else {
@@ -249,7 +263,17 @@ ${this.getSubscriptionStatusMessage(dbUser)}
   getMainKeyboard(user) {
     const buttons = [];
     
-    if (user.status === 'active') {
+    // Verificação de segurança para usuário válido
+    if (!user || typeof user !== 'object') {
+      console.warn('⚠️ Usuário inválido em getMainKeyboard, usando botões padrão');
+      buttons.push([{ text: '👉 Assinar Agora', callback_data: 'subscribe_now' }]);
+      buttons.push([{ text: '📞 Suporte', callback_data: 'support' }]);
+      return { inline_keyboard: buttons };
+    }
+    
+    const status = user.status || 'inactive';
+    
+    if (status === 'active') {
       buttons.push([{ text: '✅ Assinatura Ativa', callback_data: 'subscription_status' }]);
       buttons.push([{ text: '🔄 Renovar Assinatura', callback_data: 'renew_subscription' }]);
     } else {
