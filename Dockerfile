@@ -25,8 +25,8 @@ RUN addgroup -g 1001 -S nodejs && \
 # Copiar código da aplicação
 COPY --chown=botuser:nodejs . .
 
-# Criar diretório para banco de dados
-RUN mkdir -p /app/data && chown botuser:nodejs /app/data
+# Criar diretórios para banco de dados e backups
+RUN mkdir -p /app/data /app/data/backups && chown -R botuser:nodejs /app/data
 
 # Definir variáveis de ambiente
 ENV NODE_ENV=production

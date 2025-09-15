@@ -15,6 +15,7 @@ services:
     volumes:
       - bot_data:/app/data
       - ./logs:/app/logs
+      - ./backups:/app/data/backups
     networks:
       - bot_network
     depends_on:

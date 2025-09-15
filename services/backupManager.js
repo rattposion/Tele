@@ -5,7 +5,11 @@ const database = require('../db');
 class BackupManager {
   constructor() {
     this.db = database;
-    this.backupDir = path.join(__dirname, '../backups');
+    // Usar diretório de dados se estiver em Docker, senão usar diretório local
+    const isDocker = process.env.DATABASE_PATH && process.env.DATABASE_PATH.includes('/app/');
+    this.backupDir = isDocker 
+      ? path.join(process.env.DATABASE_PATH, '../backups')
+      : path.join(__dirname, '../backups');
     this.ensureBackupDir();
   }
 
