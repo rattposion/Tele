@@ -171,6 +171,19 @@ class TelegramSubscriptionBot {
       // Busca ou cria usuário no banco
       const dbUser = await database.findOrCreateUser(user);
       
+      // Verificação de segurança para garantir que o usuário foi criado corretamente
+      if (!dbUser) {
+        console.error('❌ Erro: falha ao criar/buscar usuário no banco de dados');
+        await this.bot.sendMessage(chatId, '❌ Erro interno. Tente novamente em alguns segundos.');
+        return;
+      }
+      
+      console.log(`✅ Usuário carregado:`, {
+        id: dbUser.id,
+        telegram_id: dbUser.telegram_id,
+        status: dbUser.status || 'inactive'
+      });
+      
       // Monta mensagem de apresentação
       const productName = process.env.PRODUCT_NAME || 'Produto Premium';
       const productDescription = process.env.PRODUCT_DESCRIPTION || 'Acesso exclusivo ao conteúdo VIP';

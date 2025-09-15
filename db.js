@@ -151,21 +151,38 @@ class Database {
             VALUES (?, ?, ?, ?)
           `;
           
-          this.db.run(insertSql, [id.toString(), username, first_name, last_name], (insertErr) => {
+          this.db.run(insertSql, [id.toString(), username, first_name, last_name], function(insertErr) {
             if (insertErr) {
               reject(insertErr);
             } else {
-              // Busca o usuário recém-criado
+              // Busca o usuário recém-criado usando o lastID correto
               const newUserSql = 'SELECT * FROM users WHERE id = ?';
-              this.db.get(newUserSql, [this.lastID], (getUserErr, newUser) => {
+              this.get(newUserSql, [this.lastID], (getUserErr, newUser) => {
                 if (getUserErr) {
                   reject(getUserErr);
+                } else if (!newUser) {
+                  // Fallback: busca por telegram_id se não encontrou por ID
+                  const fallbackSql = 'SELECT * FROM users WHERE telegram_id = ?';
+                  this.get(fallbackSql, [id.toString()], (fallbackErr, fallbackUser) => {
+                    if (fallbackErr) {
+                      reject(fallbackErr);
+                    } else {
+                      resolve(fallbackUser || {
+                        telegram_id: id.toString(),
+                        username,
+                        first_name,
+                        last_name,
+                        status: 'inactive',
+                        created_at: new Date().toISOString()
+                      });
+                    }
+                  });
                 } else {
                   resolve(newUser);
                 }
               });
             }
-          });
+          }.bind(this));
         }
       });
     });
