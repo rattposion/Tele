@@ -1280,6 +1280,33 @@ Segunda a Sexta: 9h às 18h`;
     }
   }
 
+  async handleAddGroup(msg) {
+    if (!this.isAdmin(msg.from.id)) {
+      await this.bot.sendMessage(msg.chat.id, '❌ Acesso negado.');
+      return;
+    }
+    
+    try {
+      await this.bot.sendMessage(msg.chat.id, 
+        '➕ **Adicionar Novo Grupo**\n\n' +
+        'Para adicionar um grupo, use o comando:\n' +
+        '`/addgrupo <identificador> <nome>`\n\n' +
+        '**Exemplos:**\n' +
+        '• `/addgrupo @meugrupo Meu Grupo`\n' +
+        '• `/addgrupo https://t.me/meugrupo Meu Grupo`\n' +
+        '• `/addgrupo -1001234567890 Meu Grupo`\n\n' +
+        '**Identificadores válidos:**\n' +
+        '• @nomegrupo\n' +
+        '• https://t.me/nomegrupo\n' +
+        '• ID numérico do grupo',
+        { parse_mode: 'Markdown' }
+      );
+    } catch (error) {
+      console.error('❌ Erro ao mostrar instruções de adicionar grupo:', error.message);
+      await this.bot.sendMessage(msg.chat.id, '❌ Erro interno.');
+    }
+  }
+
   async handleAddGroupWithIdentifier(msg, match) {
     if (!this.isAdmin(msg.from.id)) {
       await this.bot.sendMessage(msg.chat.id, '❌ Acesso negado.');
