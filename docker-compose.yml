@@ -1,0 +1,123 @@
+version: '3.8'
+
+services:
+  telegram-bot:
+    build: .
+    container_name: telegram-subscription-bot
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_PATH=/app/data/database.sqlite
+    env_file:
+      - .env
+    volumes:
+      - bot_data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - bot_network
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    container_name: telegram-bot-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - bot_network
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-defaultpassword}
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+
+  nginx:
+    image: nginx:alpine
+    container_name: telegram-bot-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    networks:
+      - bot_network
+    depends_on:
+      - telegram-bot
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # Opcional: Banco PostgreSQL (descomente se preferir ao SQLite)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: telegram-bot-postgres
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_DB: ${POSTGRES_DB:-telegram_bot}
+  #     POSTGRES_USER: ${POSTGRES_USER:-botuser}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-botpassword}
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - bot_network
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-botuser}"]
+  #     interval: 30s
+  #     timeout: 5s
+  #     retries: 5
+
+  # Opcional: Monitoramento com Prometheus
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: telegram-bot-prometheus
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  #     - prometheus_data:/prometheus
+  #   networks:
+  #     - bot_network
+  #   command:
+  #     - '--config.file=/etc/prometheus/prometheus.yml'
+  #     - '--storage.tsdb.path=/prometheus'
+  #     - '--web.console.libraries=/etc/prometheus/console_libraries'
+  #     - '--web.console.templates=/etc/prometheus/consoles'
+  #     - '--storage.tsdb.retention.time=200h'
+  #     - '--web.enable-lifecycle'
+
+volumes:
+  bot_data:
+    driver: local
+  redis_data:
+    driver: local
+  nginx_logs:
+    driver: local
+  # postgres_data:
+  #   driver: local
+  # prometheus_data:
+  #   driver: local
+
+networks:
+  bot_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
