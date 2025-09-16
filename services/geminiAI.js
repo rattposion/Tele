@@ -974,11 +974,25 @@ Responda apenas com o texto do conteúdo, sem explicações adicionais.`;
         return await this.model.generateContent('Teste de conexão. Responda apenas: OK');
       }, 'testConnection', 2, 500); // 2 tentativas com delay menor para teste
       
-      const response = await result.response;
-      const text = response.text();
+      // Verificar se é um resultado de fallback
+      if (result && typeof result === 'object' && result.fallbackMode) {
+        logger.warn('Teste de conexão usando fallback mode', { fallbackMode: true });
+        return result;
+      }
       
-      logger.info('Conexão Gemini AI estabelecida com sucesso');
-      return text.includes('OK');
+      // Processar resposta normal da API
+      if (result && result.response) {
+        const response = await result.response;
+        const text = response.text();
+        
+        logger.info('Conexão Gemini AI estabelecida com sucesso');
+        return text.includes('OK');
+      }
+      
+      // Se chegou aqui, algo deu errado
+      logger.warn('Resultado inesperado no teste de conexão', { result });
+      return false;
+      
     } catch (error) {
       logger.error('Erro no teste de conexão Gemini', error, {
         operation: 'testConnection',
