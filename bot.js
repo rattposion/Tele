@@ -709,6 +709,14 @@ ${this.getSubscriptionStatusMessage(dbUser)}
           await this.bot.sendMessage(chatId, '🔍 Para buscar um usuário, use: `/userinfo <user_id>`\n\nExemplo: `/userinfo 123456789`', { parse_mode: 'Markdown' });
           break;
           
+        case 'users_assinantes':
+          await this.handleAssinantes({ chat: { id: chatId }, from: { id: userId } });
+          break;
+          
+        case 'users_reenviar':
+          await this.handleUsersReenviar(callbackQuery);
+          break;
+          
         // Callbacks específicos - Backup
         case 'backup_criar':
           await this.handleBackup({ chat: { id: chatId }, from: { id: userId } });
@@ -850,8 +858,7 @@ ${this.getSubscriptionStatusMessage(dbUser)}
           await this.handleAutoAddConfig(callbackQuery);
           break;
           
-        default:
-          // === NOVOS HANDLERS PARA DM E POSTAGEM COMPLETA ===
+        // === NOVOS HANDLERS PARA DM E POSTAGEM COMPLETA ===
         case 'dm_send_all':
           await this.handleDMSendAll(callbackQuery);
           break;
@@ -862,6 +869,70 @@ ${this.getSubscriptionStatusMessage(dbUser)}
 
         case 'dm_stats':
           await this.handleDMStats(callbackQuery);
+          break;
+
+        case 'stats_basicas':
+          await this.handleStatsBasicas(callbackQuery);
+          break;
+
+        case 'stats_dm':
+          await this.handleStatsDM(callbackQuery);
+          break;
+
+        case 'grupos_add_grupo':
+          await this.handleGruposAddGrupo(callbackQuery);
+          break;
+
+        case 'grupos_listar_membros':
+          await this.handleGruposListarMembros(callbackQuery);
+          break;
+
+        case 'grupos_info':
+          await this.handleGruposInfo(callbackQuery);
+          break;
+
+        case 'jobs_scrape':
+          await this.handleJobsScrape(callbackQuery);
+          break;
+
+        case 'jobs_logs':
+          await this.handleJobsLogs(callbackQuery);
+          break;
+
+        case 'sistema_replicar':
+          await this.handleSistemaReplicar(callbackQuery);
+          break;
+
+        case 'sistema_autoadd':
+          await this.handleSistemaAutoAdd(callbackQuery);
+          break;
+
+        case 'sistema_bulkadd':
+          await this.handleSistemaBulkAdd(callbackQuery);
+          break;
+
+        case 'users_info':
+          await this.handleUsersInfo(callbackQuery);
+          break;
+
+        case 'users_ban_especifico':
+          await this.handleUsersBanEspecifico(callbackQuery);
+          break;
+
+        case 'users_unban_especifico':
+          await this.handleUsersUnbanEspecifico(callbackQuery);
+          break;
+
+        case 'config_set':
+          await this.handleConfigSet(callbackQuery);
+          break;
+
+        case 'config_togglepost':
+          await this.handleConfigTogglePost(callbackQuery);
+          break;
+
+        case 'config_testai':
+          await this.handleConfigTestAI(callbackQuery);
           break;
 
         case 'both_start_posting':
@@ -884,6 +955,7 @@ ${this.getSubscriptionStatusMessage(dbUser)}
           await this.handleExportMembers(callbackQuery);
           break;
 
+        // Handle any unrecognized callback data
         default:
           // Verifica se é um callback de scraping de grupo
           if (data.startsWith('scrape_group_')) {
@@ -894,6 +966,7 @@ ${this.getSubscriptionStatusMessage(dbUser)}
           
           console.log(`❓ Callback não reconhecido: ${data}`);
           await this.bot.sendMessage(chatId, `⚠️ Função "${data}" ainda não implementada.\n\nEm breve estará disponível!`, { parse_mode: 'Markdown' });
+          break;
       }
     } catch (error) {
       console.error('❌ Erro no callback query:', error.message);
@@ -1423,6 +1496,33 @@ Segunda a Sexta: 9h às 18h`;
       console.error('❌ Erro no comando /reenviar:', error.message);
       await this.bot.sendMessage(msg.chat.id, '❌ Erro ao reenviar cobrança.');
     }
+  }
+  
+  async handleUsersReenviar(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `📤 *Reenviar Cobrança*\n\nPara reenviar uma cobrança, use:\n\`/reenviar @username\`\n\n*Exemplo:*\n\`/reenviar @joao123\`\n\n*Funcionalidade:*\n• Reenvia cobrança para usuário específico\n• Gera nova cobrança PIX\n• Notifica o usuário por DM`;
+    
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '🔙 Voltar', callback_data: 'admin_usuarios' }
+        ]
+      ]
+    };
+    
+    await this.bot.editMessageText(message, {
+      chat_id: chatId,
+      message_id: callbackQuery.message.message_id,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
   }
 
   // Comando admin: estatísticas
@@ -2218,6 +2318,10 @@ Segunda a Sexta: 9h às 18h`;
           { text: '➕ Adicionar Grupo', callback_data: 'grupos_add_grupo' }
         ],
         [
+          { text: '📋 Listar Membros', callback_data: 'grupos_listar_membros' },
+          { text: 'ℹ️ Info do Grupo', callback_data: 'grupos_info' }
+        ],
+        [
           { text: '🔙 Voltar', callback_data: 'admin_refresh' }
         ]
       ]
@@ -2285,11 +2389,22 @@ Segunda a Sexta: 9h às 18h`;
       inline_keyboard: [
         [
           { text: '📋 Listar Usuários', callback_data: 'users_listar' },
-          { text: '🚫 Banir Usuário', callback_data: 'users_ban' }
+          { text: '👥 Listar Assinantes', callback_data: 'users_assinantes' }
         ],
         [
-          { text: '✅ Desbanir Usuário', callback_data: 'users_unban' },
-          { text: '🔍 Buscar Usuário', callback_data: 'users_buscar' }
+          { text: '🚫 Banir Usuário', callback_data: 'users_ban' },
+          { text: '✅ Desbanir Usuário', callback_data: 'users_unban' }
+        ],
+        [
+          { text: '🔍 Buscar Usuário', callback_data: 'users_buscar' },
+          { text: '📤 Reenviar Mensagem', callback_data: 'users_reenviar' }
+        ],
+        [
+          { text: 'ℹ️ Info Usuário', callback_data: 'users_info' },
+          { text: '🚫 Ban Específico', callback_data: 'users_ban_especifico' }
+        ],
+        [
+          { text: '✅ Unban Específico', callback_data: 'users_unban_especifico' }
         ],
         [
           { text: '🔙 Voltar', callback_data: 'admin_refresh' }
@@ -2401,6 +2516,13 @@ Segunda a Sexta: 9h às 18h`;
           { text: '🔄 Status Serviços', callback_data: 'sistema_status' }
         ],
         [
+          { text: '🔄 Replicar Membros', callback_data: 'sistema_replicar' },
+          { text: '➕ Auto-Add', callback_data: 'sistema_autoadd' }
+        ],
+        [
+          { text: '📁 Bulk Add', callback_data: 'sistema_bulkadd' }
+        ],
+        [
           { text: '🔙 Voltar', callback_data: 'admin_refresh' }
         ]
       ]
@@ -2436,6 +2558,13 @@ Segunda a Sexta: 9h às 18h`;
           { text: '💾 Backup Config', callback_data: 'config_backup' }
         ],
         [
+          { text: '⚙️ Definir Config', callback_data: 'config_set' },
+          { text: '🔄 Toggle Post', callback_data: 'config_togglepost' }
+        ],
+        [
+          { text: '🤖 Testar AI', callback_data: 'config_testai' }
+        ],
+        [
           { text: '🔙 Voltar', callback_data: 'admin_refresh' }
         ]
       ]
@@ -2469,6 +2598,10 @@ Segunda a Sexta: 9h às 18h`;
         [
           { text: '⏹️ Parar Job', callback_data: 'jobs_parar' },
           { text: '🔄 Reiniciar Job', callback_data: 'jobs_reiniciar' }
+        ],
+        [
+          { text: '🔍 Iniciar Scraping', callback_data: 'jobs_scrape' },
+          { text: '📋 Ver Logs', callback_data: 'jobs_logs' }
         ],
         [
           { text: '🔙 Voltar', callback_data: 'admin_refresh' }
@@ -3273,8 +3406,252 @@ Segunda a Sexta: 9h às 18h`;
       await this.bot.sendMessage(msg.chat.id, `❌ Erro ao buscar estatísticas: ${error.message}`);
     }
   }
-  
-  async handleTestAI(msg) {
+
+  async handleStatsBasicas(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    try {
+      // Chama o método handleStats existente mas adaptado para callback
+      const msg = { chat: { id: chatId }, from: { id: userId } };
+      await this.handleStats(msg);
+    } catch (error) {
+      console.error('Erro ao buscar estatísticas básicas:', error);
+      await this.bot.sendMessage(chatId, `❌ Erro ao buscar estatísticas: ${error.message}`);
+    }
+  }
+
+  async handleStatsDM(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    try {
+      // Chama o método handleDMStats existente mas adaptado para callback
+      const msg = { chat: { id: chatId }, from: { id: userId } };
+      await this.handleDMStats(msg);
+    } catch (error) {
+      console.error('Erro ao buscar estatísticas de DM:', error);
+      await this.bot.sendMessage(chatId, `❌ Erro ao buscar estatísticas: ${error.message}`);
+    }
+   }
+
+  async handleGruposAddGrupo(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `➕ **Adicionar Novo Grupo**\n\nPara adicionar um grupo, use o comando:\n\`/addgrupo <id_ou_username> <nome>\`\n\n**Exemplos:**\n• \`/addgrupo @meugrupo Meu Grupo\`\n• \`/addgrupo -1001234567890 Grupo Teste\`\n\n**Dica:** Você pode obter o ID do grupo adicionando o bot como admin temporariamente.`;
+    
+    await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  }
+
+  async handleGruposListarMembros(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `📋 **Listar Membros de Grupo**\n\nPara listar membros de um grupo específico, use:\n\`/membros <id_ou_nome_grupo>\`\n\n**Exemplos:**\n• \`/membros @meugrupo\`\n• \`/membros -1001234567890\`\n• \`/membros Meu Grupo\`\n\n**Nota:** O comando mostrará todos os membros capturados do grupo especificado.`;
+    
+    await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  }
+
+  async handleGruposInfo(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `ℹ️ **Informações do Grupo**\n\nPara obter informações detalhadas de um grupo, use:\n\`/grupo <id_ou_nome_grupo>\`\n\n**Exemplos:**\n• \`/grupo @meugrupo\`\n• \`/grupo -1001234567890\`\n• \`/grupo Meu Grupo\`\n\n**Informações exibidas:**\n• Nome e descrição\n• Número de membros\n• Status de scraping\n• Última atualização\n• Configurações específicas`;
+    
+    await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  }
+
+  async handleJobsScrape(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    try {
+      // Chama o método handleScrapeSelect existente mas adaptado para callback
+      const msg = { chat: { id: chatId }, from: { id: userId } };
+      await this.handleScrapeSelect(msg);
+    } catch (error) {
+      console.error('Erro ao iniciar scraping:', error);
+      await this.bot.sendMessage(chatId, `❌ Erro ao iniciar scraping: ${error.message}`);
+    }
+  }
+
+  async handleJobsLogs(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    try {
+      // Chama o método handleLogs existente mas adaptado para callback
+      const msg = { chat: { id: chatId }, from: { id: userId } };
+      await this.handleLogs(msg);
+    } catch (error) {
+      console.error('Erro ao buscar logs:', error);
+      await this.bot.sendMessage(chatId, `❌ Erro ao buscar logs: ${error.message}`);
+    }
+   }
+
+  async handleSistemaReplicar(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `🔄 **Replicar Membros**\n\nPara replicar membros entre grupos, use:\n\`/replicar <grupo_origem> <grupo_destino>\`\n\n**Exemplos:**\n• \`/replicar @grupoA @grupoB\`\n• \`/replicar -1001234567890 -1009876543210\`\n• \`/replicar "Grupo A" "Grupo B"\`\n\n**Nota:** O comando copiará todos os membros do grupo origem para o grupo destino.`;
+    
+    await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  }
+
+  async handleSistemaAutoAdd(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `➕ **Auto-Add Específico**\n\nPara configurar auto-add entre grupos específicos, use:\n\`/autoadd <grupo_destino> <grupo_origem>\`\n\n**Exemplos:**\n• \`/autoadd @meugrupo @grupoorigem\`\n• \`/autoadd -1001234567890 -1009876543210\`\n\n**Funcionalidade:**\n• Adiciona automaticamente novos membros do grupo origem ao grupo destino\n• Monitora continuamente novos ingressos\n• Configuração específica por par de grupos`;
+    
+    await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  }
+
+  async handleSistemaBulkAdd(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `📁 **Bulk Add - Adição em Massa**\n\nPara adicionar membros em massa a partir de arquivo, use:\n\`/bulkadd <arquivo>\`\n\n**Formato do arquivo:**\n• Uma linha por usuário\n• Formato: \`@username\` ou \`user_id\`\n• Arquivo de texto (.txt)\n\n**Exemplo de conteúdo:**\n\`\`\`\n@usuario1\n@usuario2\n123456789\n@usuario3\n\`\`\`\n\n**Nota:** Envie o arquivo junto com o comando para processar a adição em massa.`;
+    
+    await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+   }
+
+  async handleUsersInfo(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `ℹ️ **Informações do Usuário**\n\nPara obter informações detalhadas de um usuário, use:\n\`/usuario <id_ou_username>\`\n\n**Exemplos:**\n• \`/usuario @username\`\n• \`/usuario 123456789\`\n\n**Informações exibidas:**\n• ID e username\n• Status de assinatura\n• Data de registro\n• Última atividade\n• Status de ban/unban\n• Histórico de pagamentos`;
+    
+    await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  }
+
+  async handleUsersBanEspecifico(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `🚫 **Banir Usuário Específico**\n\nPara banir um usuário específico, use:\n\`/ban <id_ou_username> [motivo]\`\n\n**Exemplos:**\n• \`/ban @usuario_problema\`\n• \`/ban 123456789 Spam\`\n• \`/ban @usuario "Comportamento inadequado"\`\n\n**Efeitos do ban:**\n• Usuário não pode mais usar o bot\n• Acesso negado a todas as funcionalidades\n• Assinatura suspensa temporariamente\n• Registro no log de moderação`;
+    
+    await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  }
+
+  async handleUsersUnbanEspecifico(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `✅ **Desbanir Usuário Específico**\n\nPara desbanir um usuário específico, use:\n\`/unban <id_ou_username>\`\n\n**Exemplos:**\n• \`/unban @usuario_recuperado\`\n• \`/unban 123456789\`\n\n**Efeitos do unban:**\n• Usuário recupera acesso ao bot\n• Funcionalidades restauradas\n• Assinatura reativada (se ainda válida)\n• Registro no log de moderação\n• Notificação de reativação enviada`;
+    
+    await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+   }
+
+  async handleConfigSet(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `⚙️ **Definir Configurações**\n\nPara definir configurações do sistema, use:\n\`/set <chave> <valor>\`\n\n**Configurações disponíveis:**\n• \`auto_post_interval\` - Intervalo entre posts (minutos)\n• \`max_groups_per_user\` - Máximo de grupos por usuário\n• \`subscription_price\` - Preço da assinatura\n• \`welcome_message\` - Mensagem de boas-vindas\n• \`support_contact\` - Contato do suporte\n\n**Exemplos:**\n• \`/set auto_post_interval 30\`\n• \`/set max_groups_per_user 5\`\n• \`/set welcome_message "Bem-vindo ao bot!"\``;
+    
+    await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  }
+
+  async handleConfigTogglePost(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `🔄 **Toggle Post**\n\nPara alternar o status de postagem automática, use:\n\`/togglepost <grupo_id> [status]\`\n\n**Parâmetros:**\n• \`grupo_id\` - ID do grupo ou \`all\` para todos\n• \`status\` - \`on\`, \`off\` ou vazio para alternar\n\n**Exemplos:**\n• \`/togglepost all\` - Alterna todos os grupos\n• \`/togglepost -1001234567890 on\` - Ativa grupo específico\n• \`/togglepost @meugrupo off\` - Desativa grupo específico\n\n**Status atual:**\n• ✅ Ativo - Posts automáticos habilitados\n• ❌ Inativo - Posts automáticos desabilitados`;
+    
+    await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  }
+
+  async handleConfigTestAI(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const userId = callbackQuery.from.id;
+    
+    if (!this.isAdmin(userId)) {
+      await this.bot.sendMessage(chatId, '❌ Acesso negado.');
+      return;
+    }
+    
+    const message = `🤖 **Testar AI**\n\nPara testar a integração com IA, use:\n\`/testai [prompt]\`\n\n**Funcionalidades:**\n• Teste de conectividade com Gemini AI\n• Geração de conteúdo automático\n• Análise de sentimentos\n• Moderação de conteúdo\n• Sugestões de posts\n\n**Exemplos:**\n• \`/testai\` - Teste básico de conectividade\n• \`/testai "Gere um post sobre tecnologia"\`\n• \`/testai "Analise este texto: [texto]"\`\n\n**Status do serviço:**\n• 🟢 Online - Serviço funcionando\n• 🟡 Limitado - Funcionalidade reduzida\n• 🔴 Offline - Serviço indisponível`;
+    
+    await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  }
+     
+     async handleTestAI(msg) {
     if (!this.isAdmin(msg.from.id)) {
       await this.bot.sendMessage(msg.chat.id, '❌ Acesso negado.');
       return;
