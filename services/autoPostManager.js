@@ -621,6 +621,27 @@ class AutoPostManager {
         WHERE dm_consent = 1 AND subscription_end > datetime('now')
       `);
       
+      // Estatísticas de performance
+      const bestDayStats = await database.get(`
+        SELECT date, dm_sent
+        FROM daily_stats 
+        WHERE dm_sent > 0
+        ORDER BY dm_sent DESC
+        LIMIT 1
+      `);
+      
+      const overallStats = await database.get(`
+        SELECT 
+          COALESCE(SUM(dm_sent), 0) as total_sent,
+          COALESCE(SUM(dm_success), 0) as total_success
+        FROM daily_stats 
+        WHERE dm_sent > 0
+      `);
+      
+      const overallRate = overallStats && overallStats.total_sent > 0 
+        ? Math.round((overallStats.total_success / overallStats.total_sent) * 100)
+        : 0;
+      
       return {
         today: {
           sent: todayData.sent,
@@ -632,6 +653,11 @@ class AutoPostManager {
           total: weekData.total,
           dailyAverage: Math.round(weekData.dailyAverage),
           conversions: weekData.conversions
+        },
+        performance: {
+          bestDay: bestDayStats ? moment(bestDayStats.date).format('DD/MM') : 'N/A',
+          bestHour: '14', // Horário fixo por enquanto
+          overallRate: overallRate
         },
         users: {
           eligible: eligibleUsers?.count || 0,

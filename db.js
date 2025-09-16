@@ -1014,6 +1014,8 @@ class Database {
           revenue DECIMAL(10,2) DEFAULT 0,
           auto_posts_sent INTEGER DEFAULT 0,
           dm_sent INTEGER DEFAULT 0,
+          dm_success INTEGER DEFAULT 0,
+          dm_failed INTEGER DEFAULT 0,
           ai_generations INTEGER DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
@@ -1025,8 +1027,64 @@ class Database {
           reject(err);
         } else {
           console.log('✅ Tabela daily_stats criada/verificada');
-          resolve();
+          // Adicionar colunas dm_success e dm_failed se não existirem
+          this.addDMStatsColumns().then(() => {
+            resolve();
+          }).catch((alterErr) => {
+            console.warn('⚠️ Aviso ao adicionar colunas DM:', alterErr.message);
+            resolve(); // Continua mesmo se falhar
+          });
         }
+      });
+    });
+  }
+
+  // Adiciona colunas DM à tabela daily_stats se não existirem
+  async addDMStatsColumns() {
+    return new Promise((resolve, reject) => {
+      // Verificar se as colunas já existem
+      this.db.all("PRAGMA table_info(daily_stats)", (err, columns) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        
+        const columnNames = columns.map(col => col.name);
+        const hasSuccess = columnNames.includes('dm_success');
+        const hasFailed = columnNames.includes('dm_failed');
+        
+        const alterQueries = [];
+        
+        if (!hasSuccess) {
+          alterQueries.push("ALTER TABLE daily_stats ADD COLUMN dm_success INTEGER DEFAULT 0");
+        }
+        
+        if (!hasFailed) {
+          alterQueries.push("ALTER TABLE daily_stats ADD COLUMN dm_failed INTEGER DEFAULT 0");
+        }
+        
+        if (alterQueries.length === 0) {
+          console.log('✅ Colunas DM já existem na tabela daily_stats');
+          resolve();
+          return;
+        }
+        
+        // Executar as queries de alteração
+        let completed = 0;
+        alterQueries.forEach(query => {
+          this.db.run(query, (alterErr) => {
+            if (alterErr) {
+              console.error('Erro ao adicionar coluna DM:', alterErr.message);
+            } else {
+              console.log('✅ Coluna DM adicionada com sucesso');
+            }
+            
+            completed++;
+            if (completed === alterQueries.length) {
+              resolve();
+            }
+          });
+        });
       });
     });
   }
