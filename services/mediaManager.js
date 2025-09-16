@@ -1,4 +1,5 @@
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
 const database = require('../db');
 const logger = require('../utils/logger');
@@ -7,7 +8,9 @@ class MediaManager {
   constructor(bot) {
     this.bot = bot;
     this.db = database;
-    this.mediaDir = path.join(__dirname, '../media');
+    // Detecta se está rodando em Docker ou local
+    const isDocker = process.env.NODE_ENV === 'production' || fsSync.existsSync('/.dockerenv');
+    this.mediaDir = isDocker ? '/app/media' : path.join(__dirname, '../media');
     this.ensureMediaDir();
   }
 

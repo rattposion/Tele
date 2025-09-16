@@ -774,6 +774,38 @@ Gere conteúdo criativo:`;
   }
 
   /**
+   * Retorna conteúdo fallback baseado na operação
+   * @param {string} operationName - Nome da operação
+   * @param {Array} args - Argumentos da operação original
+   * @returns {Object} Conteúdo fallback
+   */
+  getFallbackContent(operationName, args) {
+    switch (operationName) {
+      case 'generateGroupPost':
+        const [theme, targetAudience] = args[0] || ['assinatura premium', 'adultos'];
+        return this.getFallbackGroupContent(theme, targetAudience);
+      
+      case 'generatePersonalizedDM':
+        const [user, campaignType] = args[0] || [{}, 'subscription'];
+        return this.getFallbackDMContent(user, campaignType);
+      
+      case 'generateAttractiveBio':
+        const [purpose, platform, style] = args[0] || ['perfil premium', 'telegram', 'seductive'];
+        return this.getFallbackBio(platform, style);
+      
+      case 'generateCampaignContent':
+        const [campaignName] = args[0] || ['new_member'];
+        return this.getFallbackCampaign(campaignName);
+      
+      case 'testConnection':
+        return { success: false, fallbackMode: true, message: 'Usando modo fallback devido a limite de quota' };
+      
+      default:
+        return this.getFallbackGroupContent('assinatura premium', 'adultos');
+    }
+  }
+
+  /**
    * Método genérico para gerar conteúdo
    * @param {Object} params - Parâmetros para geração
    * @returns {Object} Conteúdo gerado
@@ -868,20 +900,47 @@ Responda apenas com o texto do conteúdo, sem explicações adicionais.`;
           totalDuration: Date.now() - startTime
         });
         
-        // Se não é erro 503 ou 429, não tenta novamente
-        if (!isRetryableError) {
-          logger.error(`Erro não recuperável na operação Gemini: ${operationName}`, error, {
-            attempt: attempt + 1,
-            totalDuration: Date.now() - startTime
+        // Se é erro de quota (429), ativa modo fallback imediatamente
+        if (error.status === 429) {
+          logger.warn(`⚠️ Gemini AI não conectado, usando conteúdo fallback`, {
+            fallbackMode: true,
+            impact: 'Conteúdo será gerado usando templates pré-definidos'
+          });
+          
+          // Retorna conteúdo fallback baseado na operação
+          return this.getFallbackContent(operationName, arguments);
+        }
+        
+        // Se não é erro 503, não tenta novamente
+        if (error.status !== 503) {
+          logger.error(`❌ Erro no teste de conexão Gemini`, {
+            operation: operationName,
+            critical: true,
+            error: {
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+              status: error.status,
+              statusText: error.statusText,
+              errorDetails: error.errorDetails
+            }
           });
           throw error;
         }
         
         // Se é a última tentativa, lança o erro
         if (isLastAttempt) {
-          logger.error(`Falha definitiva na operação Gemini: ${operationName}`, error, {
+          logger.error(`Falha definitiva na operação Gemini: ${operationName}`, {
             totalAttempts: attempt + 1,
-            totalDuration: Date.now() - startTime
+            totalDuration: Date.now() - startTime,
+            error: {
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+              status: error.status,
+              statusText: error.statusText,
+              errorDetails: error.errorDetails
+            }
           });
           throw error;
         }
