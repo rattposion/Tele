@@ -169,7 +169,7 @@ class GroupManager {
         
         for (const admin of admins) {
           if (!admin.user.is_bot) {
-            await this.saveMember({
+            await this.db.saveMember({
               user_id: admin.user.id.toString(),
               group_id: groupId,
               username: admin.user.username,
@@ -179,6 +179,8 @@ class GroupManager {
               is_active: true
             });
             scrapedCount++;
+            
+            console.log(`✅ Admin salvo: ${admin.user.first_name} (${admin.user.id})`);
           }
           
           // Rate limiting
@@ -202,21 +204,23 @@ class GroupManager {
           }
           
           for (const message of messages) {
-            if (message.from && !message.from.is_bot) {
-              await this.saveMember({
-                user_id: message.from.id.toString(),
-                group_id: groupId,
-                username: message.from.username,
-                first_name: message.from.first_name,
-                last_name: message.from.last_name,
-                is_active: true,
-                last_seen: new Date().toISOString()
-              });
-              scrapedCount++;
+              if (message.from && !message.from.is_bot) {
+                await this.db.saveMember({
+                  user_id: message.from.id.toString(),
+                  group_id: groupId,
+                  username: message.from.username,
+                  first_name: message.from.first_name,
+                  last_name: message.from.last_name,
+                  is_active: true,
+                  last_seen: new Date().toISOString()
+                });
+                scrapedCount++;
+                
+                console.log(`✅ Usuário salvo: ${message.from.first_name} (${message.from.id})`);
+              }
+              
+              lastMessageId = message.message_id;
             }
-            
-            lastMessageId = message.message_id;
-          }
           
           // Atualizar progresso
           const progress = Math.min(Math.round((scrapedCount / memberCount) * 100), 100);
@@ -321,8 +325,18 @@ class GroupManager {
               }
               
               // Salvar membro no banco
-              await this.db.saveGroupMember(sourceGroup.id, member);
+              await this.db.saveMember({
+                user_id: member.id.toString(),
+                group_id: sourceGroupId,
+                username: member.username,
+                first_name: member.first_name,
+                last_name: member.last_name,
+                status: member.status || 'member',
+                is_active: true
+              });
+              
               scrapedCount++;
+              console.log(`✅ Membro salvo: ${member.first_name} (${member.id})`);
               
               // Se há grupo alvo, tentar adicionar
               if (targetGroupId) {
@@ -658,30 +672,10 @@ class GroupManager {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  // Salvar membro no banco
+  // Salvar membro no banco (delegado para database)
   async saveMember(memberData) {
     try {
-      const query = `
-        INSERT OR REPLACE INTO group_members (
-          user_id, group_id, username, first_name, last_name, 
-          status, is_active, last_seen
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `;
-      
-      const status = memberData.is_admin ? 'administrator' : (memberData.status || 'member');
-      
-      await this.db.run(query, [
-        memberData.user_id,
-        memberData.group_id,
-        memberData.username,
-        memberData.first_name,
-        memberData.last_name,
-        status,
-        memberData.is_active ? 1 : 0,
-        memberData.last_seen || new Date().toISOString()
-      ]);
-      
-      return { success: true };
+      return await this.db.saveMember(memberData);
     } catch (error) {
       console.error('❌ Erro ao salvar membro:', error.message);
       return { success: false, error: error.message };

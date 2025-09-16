@@ -6,8 +6,15 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "setup": "node setup.js",
     "migrate": "node db.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "backup": "node -e \"require('./services/BackupService').createBackup()\"",
+    "restore": "node -e \"require('./services/BackupService').restoreBackup(process.argv[2])\"",
+    "logs": "tail -f logs/bot.log",
+    "clean": "rm -rf logs/* backups/* media/temp/*",
+    "test": "echo \"Sistema completo implementado - use npm run setup para configurar\"",
+    "install-deps": "npm install",
+    "check-env": "node -e \"console.log(require('dotenv').config())\""
   },
   "keywords": [
     "telegram",

@@ -33,6 +33,8 @@ class Database {
       await this.createGroupMembersTable();
       await this.createScrapingJobsTable();
       await this.createActionLogsTable();
+      await this.createMediaTable();
+      await this.createScheduledPostsTable();
       await this.createDailyStatsTable();
       await this.createSettingsTable();
       await this.createIndexes();
@@ -457,6 +459,80 @@ class Database {
     });
   }
 
+  // Cria tabela de mídia para postagens automáticas
+  createMediaTable() {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        CREATE TABLE IF NOT EXISTS media (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          file_id TEXT UNIQUE NOT NULL,
+          file_type TEXT NOT NULL CHECK(file_type IN ('photo', 'video', 'document', 'audio', 'voice', 'sticker', 'animation')),
+          file_name TEXT,
+          file_size INTEGER,
+          file_path TEXT,
+          mime_type TEXT,
+          width INTEGER,
+          height INTEGER,
+          duration INTEGER,
+          caption TEXT,
+          tags TEXT,
+          category TEXT DEFAULT 'general',
+          is_active BOOLEAN DEFAULT 1,
+          usage_count INTEGER DEFAULT 0,
+          last_used DATETIME,
+          uploaded_by INTEGER,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (uploaded_by) REFERENCES users (id)
+        )
+      `;
+
+      this.db.run(sql, (err) => {
+        if (err) {
+          console.error('Erro ao criar tabela media:', err.message);
+          reject(err);
+        } else {
+          console.log('✅ Tabela media criada/verificada');
+          resolve();
+        }
+      });
+    });
+  }
+
+  // Cria tabela de postagens programadas
+  createScheduledPostsTable() {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        CREATE TABLE IF NOT EXISTS scheduled_posts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          media_id INTEGER,
+          group_id INTEGER,
+          caption TEXT,
+          scheduled_time DATETIME NOT NULL,
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'sent', 'failed', 'cancelled')),
+          sent_at DATETIME,
+          error_message TEXT,
+          created_by INTEGER,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (media_id) REFERENCES media (id),
+          FOREIGN KEY (group_id) REFERENCES groups (id),
+          FOREIGN KEY (created_by) REFERENCES users (id)
+        )
+      `;
+
+      this.db.run(sql, (err) => {
+        if (err) {
+          console.error('Erro ao criar tabela scheduled_posts:', err.message);
+          reject(err);
+        } else {
+          console.log('✅ Tabela scheduled_posts criada/verificada');
+          resolve();
+        }
+      });
+    });
+  }
+
   // === MÉTODOS PARA GRUPOS ===
 
   // Salvar ou atualizar grupo
@@ -592,6 +668,150 @@ class Database {
           reject(err);
         } else {
           resolve(rows);
+        }
+      });
+    });
+  }
+
+  // Salvar membro com informações completas (corrige problema do scraping)
+  async saveMember(memberData) {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        INSERT OR REPLACE INTO group_members 
+        (group_id, user_id, username, first_name, last_name, status, is_bot, is_premium, is_active, last_seen, joined_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `;
+      
+      this.db.run(sql, [
+        memberData.group_id,
+        memberData.user_id,
+        memberData.username || null,
+        memberData.first_name || null,
+        memberData.last_name || null,
+        memberData.status || 'member',
+        memberData.is_bot || 0,
+        memberData.is_premium || 0,
+        memberData.is_active !== undefined ? memberData.is_active : 1
+      ], function(err) {
+        if (err) {
+          console.error('Erro ao salvar membro:', err.message);
+          reject(err);
+        } else {
+          resolve(this.lastID);
+        }
+      });
+    });
+  }
+
+  // Buscar todos os usuários coletados para mensagem em massa
+  async getAllCollectedUsers(activeOnly = false) {
+    return new Promise((resolve, reject) => {
+      let sql = `
+        SELECT DISTINCT user_id, username, first_name, last_name, last_seen, is_active
+        FROM group_members 
+        WHERE is_bot = 0
+      `;
+      
+      if (activeOnly) {
+        sql += ` AND is_active = 1 AND last_seen > datetime('now', '-30 days')`;
+      }
+      
+      sql += ` ORDER BY last_seen DESC`;
+      
+      this.db.all(sql, [], (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+  }
+
+  // Buscar usuários por status de atividade
+  async getUsersByActivityStatus(status = 'all') {
+    return new Promise((resolve, reject) => {
+      let sql = `
+        SELECT DISTINCT user_id, username, first_name, last_name, last_seen, is_active
+        FROM group_members 
+        WHERE is_bot = 0
+      `;
+      
+      switch (status) {
+        case 'active':
+          sql += ` AND is_active = 1 AND last_seen > datetime('now', '-7 days')`;
+          break;
+        case 'inactive':
+          sql += ` AND (is_active = 0 OR last_seen < datetime('now', '-30 days'))`;
+          break;
+        case 'all':
+        default:
+          // Sem filtro adicional
+          break;
+      }
+      
+      sql += ` ORDER BY last_seen DESC`;
+      
+      this.db.all(sql, [], (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+  }
+
+  // Buscar usuários de grupos específicos
+  async getUsersFromGroups(groupIds) {
+    return new Promise((resolve, reject) => {
+      const placeholders = groupIds.map(() => '?').join(',');
+      const sql = `
+        SELECT DISTINCT user_id, username, first_name, last_name, last_seen, group_id
+        FROM group_members 
+        WHERE group_id IN (${placeholders}) AND is_bot = 0
+        ORDER BY last_seen DESC
+      `;
+      
+      this.db.all(sql, groupIds, (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+  }
+
+  // Atualizar status de atividade do usuário
+  async updateUserActivity(userId, isActive = true) {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        UPDATE group_members 
+        SET is_active = ?, last_seen = CURRENT_TIMESTAMP
+        WHERE user_id = ?
+      `;
+      
+      this.db.run(sql, [isActive ? 1 : 0, userId], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(this.changes);
+        }
+      });
+    });
+  }
+
+  // Limpar posts agendados
+  async clearAllScheduledPosts() {
+    return new Promise((resolve, reject) => {
+      const sql = `DELETE FROM scheduled_posts WHERE status = 'pending'`;
+      
+      this.db.run(sql, [], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve({ removed: this.changes });
         }
       });
     });
@@ -1134,6 +1354,251 @@ class Database {
 
   all(sql, params = []) {
     return new Promise((resolve, reject) => {
+      this.db.all(sql, params, (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+  }
+
+  // === MÉTODOS PARA MÍDIA ===
+
+  // Salvar mídia no banco
+  async saveMedia(mediaData) {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        INSERT OR REPLACE INTO media 
+        (file_id, file_type, file_name, file_size, file_path, mime_type, width, height, duration, caption, tags, category, uploaded_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      
+      this.db.run(sql, [
+        mediaData.file_id,
+        mediaData.file_type,
+        mediaData.file_name || null,
+        mediaData.file_size || null,
+        mediaData.file_path || null,
+        mediaData.mime_type || null,
+        mediaData.width || null,
+        mediaData.height || null,
+        mediaData.duration || null,
+        mediaData.caption || null,
+        mediaData.tags || null,
+        mediaData.category || 'general',
+        mediaData.uploaded_by || null
+      ], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(this.lastID);
+        }
+      });
+    });
+  }
+
+  // Buscar mídia por ID
+  async getMedia(mediaId) {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT * FROM media WHERE id = ?';
+      this.db.get(sql, [mediaId], (err, row) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(row);
+        }
+      });
+    });
+  }
+
+  // Buscar mídia por file_id
+  async getMediaByFileId(fileId) {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT * FROM media WHERE file_id = ?';
+      this.db.get(sql, [fileId], (err, row) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(row);
+        }
+      });
+    });
+  }
+
+  // Listar todas as mídias
+  async getAllMedia(category = null, limit = 100, offset = 0) {
+    return new Promise((resolve, reject) => {
+      let sql = 'SELECT * FROM media WHERE is_active = 1';
+      const params = [];
+      
+      if (category) {
+        sql += ' AND category = ?';
+        params.push(category);
+      }
+      
+      sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+      params.push(limit, offset);
+      
+      this.db.all(sql, params, (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+  }
+
+  // Buscar mídia aleatória para auto-post
+  async getRandomMedia(category = null, excludeIds = []) {
+    return new Promise((resolve, reject) => {
+      let sql = 'SELECT * FROM media WHERE is_active = 1';
+      const params = [];
+      
+      if (category) {
+        sql += ' AND category = ?';
+        params.push(category);
+      }
+      
+      if (excludeIds.length > 0) {
+        sql += ` AND id NOT IN (${excludeIds.map(() => '?').join(',')})`;
+        params.push(...excludeIds);
+      }
+      
+      sql += ' ORDER BY RANDOM() LIMIT 1';
+      
+      this.db.get(sql, params, (err, row) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(row);
+        }
+      });
+    });
+  }
+
+  // Atualizar uso da mídia
+  async updateMediaUsage(mediaId) {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        UPDATE media 
+        SET usage_count = usage_count + 1, last_used = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `;
+      
+      this.db.run(sql, [mediaId], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(this.changes);
+        }
+      });
+    });
+  }
+
+  // Deletar mídia
+  async deleteMedia(mediaId) {
+    return new Promise((resolve, reject) => {
+      const sql = 'UPDATE media SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+      this.db.run(sql, [mediaId], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(this.changes);
+        }
+      });
+    });
+  }
+
+  // === MÉTODOS PARA POSTAGENS PROGRAMADAS ===
+
+  // Criar postagem programada
+  async createScheduledPost(postData) {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        INSERT INTO scheduled_posts 
+        (media_id, group_id, caption, scheduled_time, created_by)
+        VALUES (?, ?, ?, ?, ?)
+      `;
+      
+      this.db.run(sql, [
+        postData.media_id,
+        postData.group_id,
+        postData.caption || null,
+        postData.scheduled_time,
+        postData.created_by || null
+      ], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(this.lastID);
+        }
+      });
+    });
+  }
+
+  // Buscar postagens pendentes
+  async getPendingPosts() {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        SELECT sp.*, m.file_id, m.file_type, m.caption as media_caption, g.telegram_id as group_telegram_id
+        FROM scheduled_posts sp
+        JOIN media m ON sp.media_id = m.id
+        JOIN groups g ON sp.group_id = g.id
+        WHERE sp.status = 'pending' AND sp.scheduled_time <= CURRENT_TIMESTAMP
+        ORDER BY sp.scheduled_time ASC
+      `;
+      
+      this.db.all(sql, [], (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+  }
+
+  // Atualizar status da postagem
+  async updateScheduledPostStatus(postId, status, errorMessage = null) {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        UPDATE scheduled_posts 
+        SET status = ?, sent_at = CASE WHEN ? = 'sent' THEN CURRENT_TIMESTAMP ELSE sent_at END, 
+            error_message = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `;
+      
+      this.db.run(sql, [status, status, errorMessage, postId], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(this.changes);
+        }
+      });
+    });
+  }
+
+  // Buscar postagens por grupo
+  async getScheduledPostsByGroup(groupId, status = null) {
+    return new Promise((resolve, reject) => {
+      let sql = `
+        SELECT sp.*, m.file_id, m.file_type, m.caption as media_caption
+        FROM scheduled_posts sp
+        JOIN media m ON sp.media_id = m.id
+        WHERE sp.group_id = ?
+      `;
+      const params = [groupId];
+      
+      if (status) {
+        sql += ' AND sp.status = ?';
+        params.push(status);
+      }
+      
+      sql += ' ORDER BY sp.scheduled_time DESC';
+      
       this.db.all(sql, params, (err, rows) => {
         if (err) {
           reject(err);
