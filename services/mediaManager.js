@@ -154,6 +154,97 @@ class MediaManager {
     }
   }
 
+  // Salvar mídia diretamente do Telegram usando file_id
+  async saveMediaFromTelegram(fileId, fileType, options = {}) {
+    try {
+      // Obter informações do arquivo do Telegram
+      const file = await this.bot.getFile(fileId);
+      const fileUrl = `https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`;
+      
+      // Baixar o arquivo
+      const fetch = require('node-fetch');
+      const response = await fetch(fileUrl);
+      
+      if (!response.ok) {
+        throw new Error(`Erro ao baixar arquivo: ${response.statusText}`);
+      }
+      
+      const buffer = await response.buffer();
+      
+      // Gerar nome único para o arquivo
+      const timestamp = Date.now();
+      const extension = this.getFileExtension(fileType, file.file_path);
+      const filename = `${fileType}_${timestamp}${extension}`;
+      const filePath = path.join(this.mediaDir, filename);
+      
+      // Salvar arquivo no disco
+      await fs.writeFile(filePath, buffer);
+      
+      // Salvar informações no banco de dados
+      const mediaData = {
+        file_id: fileId,
+        file_type: fileType,
+        file_path: filePath,
+        filename: filename,
+        file_size: buffer.length,
+        mime_type: this.getMimeType(extension),
+        caption: options.caption || null,
+        category: options.category || 'admin_upload',
+        tags: options.tags || null,
+        uploaded_by: options.uploaded_by || null,
+        auto_upload: options.auto_upload || false,
+        created_at: new Date().toISOString(),
+        usage_count: 0,
+        last_used: null
+      };
+      
+      const result = await this.db.run(
+        `INSERT INTO media (
+          file_id, file_type, file_path, filename, file_size, mime_type,
+          caption, category, tags, uploaded_by, auto_upload, created_at,
+          usage_count, last_used
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          mediaData.file_id, mediaData.file_type, mediaData.file_path,
+          mediaData.filename, mediaData.file_size, mediaData.mime_type,
+          mediaData.caption, mediaData.category, mediaData.tags,
+          mediaData.uploaded_by, mediaData.auto_upload, mediaData.created_at,
+          mediaData.usage_count, mediaData.last_used
+        ]
+      );
+      
+      logger.info(`Mídia salva automaticamente: ${filename}`);
+      
+      return {
+        id: result.lastID,
+        ...mediaData
+      };
+      
+    } catch (error) {
+      logger.error('Erro ao salvar mídia do Telegram:', error);
+      throw error;
+    }
+  }
+  
+  // Obter MIME type baseado na extensão
+  getMimeType(extension) {
+    const mimeTypes = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.mp4': 'video/mp4',
+      '.avi': 'video/avi',
+      '.mov': 'video/quicktime',
+      '.mp3': 'audio/mpeg',
+      '.wav': 'audio/wav',
+      '.ogg': 'audio/ogg'
+    };
+    
+    return mimeTypes[extension.toLowerCase()] || 'application/octet-stream';
+  }
+
   // Obter extensão do arquivo baseada no tipo
   getFileExtension(fileType, mimeType) {
     const extensions = {

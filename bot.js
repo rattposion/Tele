@@ -2968,6 +2968,63 @@ Segunda a Sexta: 9h às 18h`;
     }
   }
   
+  // Handler específico para fotos enviadas por admins
+  async handleAdminPhoto(msg) {
+    try {
+      // Verificar se é um administrador
+      if (!this.isAdmin(msg.from.id.toString())) {
+        return; // Não é admin, ignora
+      }
+      
+      console.log('📸 Admin enviou uma foto, processando...');
+      
+      // Obter a foto de maior qualidade
+      const photo = msg.photo[msg.photo.length - 1];
+      const fileId = photo.file_id;
+      
+      try {
+        // Baixar e salvar a imagem usando o MediaManager
+        const savedMedia = await this.mediaManager.saveMediaFromTelegram(fileId, 'photo', {
+          caption: msg.caption || 'Imagem enviada pelo admin',
+          uploaded_by: msg.from.id,
+          auto_upload: true
+        });
+        
+        // Enviar confirmação para o admin
+        await this.bot.sendMessage(msg.chat.id, 
+          `✅ *Imagem salva automaticamente!*\n\n` +
+          `📁 *Arquivo:* ${savedMedia.filename}\n` +
+          `📊 *Tamanho:* ${(savedMedia.file_size / 1024).toFixed(1)} KB\n` +
+          `🎯 *Disponível para auto-post:* Sim\n\n` +
+          `💡 *Dica:* Esta imagem agora está disponível no sistema de auto-postagem e pode ser usada em posts manuais.`,
+          { 
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '📱 Ver Mídia', callback_data: 'media_list' },
+                { text: '📤 Postar Agora', callback_data: 'manual_post_now' }
+              ]]
+            }
+          }
+        );
+        
+        console.log(`✅ Imagem do admin salva: ${savedMedia.filename}`);
+        
+      } catch (error) {
+        console.error('❌ Erro ao salvar imagem do admin:', error.message);
+        
+        await this.bot.sendMessage(msg.chat.id, 
+          `❌ *Erro ao salvar imagem:*\n\n${error.message}\n\n` +
+          `💡 *Tente novamente ou use o comando /upload*`,
+          { parse_mode: 'Markdown' }
+        );
+      }
+      
+    } catch (error) {
+      console.error('❌ Erro no handler de foto do admin:', error.message);
+    }
+  }
+  
   async handleMessage(msg) {
     try {
       // Verificar se o usuário está aguardando mensagem de massa
